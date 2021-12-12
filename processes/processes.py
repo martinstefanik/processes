@@ -257,7 +257,7 @@ class OrnsteinUhlenbeckProcess(StochasticProcess):
         return paths
 
 
-class MultiDimensionalItoProcess(StochasticProcess):
+class ItoProcess(StochasticProcess):
     """Ito process."""
 
     def __init__(self, mu: Callable, sigma: Callable) -> None:
@@ -290,12 +290,40 @@ class MultiDimensionalItoProcess(StochasticProcess):
     def sample(
         self, T: float, n_time_grid: int, x0: float, n_paths: int = 1
     ) -> np.ndarray:
-        """
-        Generate sample paths of the Ito process. Sampling is done using the
-        Euler-Maruyama scheme.
-        """
+        """Generate sample paths of the Ito process."""
         # Sanity check for input parameters
-        validate_common_sampling_parameters()
+        validate_common_sampling_parameters(T, n_time_grid, n_paths)
+
+        # Run the Euler-Maruyama scheme
+        dt = T / n_time_grid
+        paths = np.zeros(shape=(n_paths, n_time_grid))
+        paths[:, 0] = x0
+        noise_scale = np.sqrt(dt)
+        for i in range(1, n_time_grid):
+            t = (i - 1) * dt
+            drift_coeffs = np.array(
+                list(map(lambda x: self.mu(x, t), paths[:, i - 1]))
+            )  # t is the same for all paths in the current iteration
+            diffusion_coeffs = np.array(
+                list(map(lambda x: self.sigma(x, t), paths[:, i - 1]))
+            )  # t is the same for all paths in the current iteration
+            noise = np.random.normal(loc=0, scale=noise_scale, size=n_paths)
+            paths[:, i] = (
+                paths[:, i - 1] + drift_coeffs * dt + diffusion_coeffs * noise
+            )
+        paths = np.squeeze(paths)
+        return paths
+
+
+class MultiDimensionalItoProcess(ItoProcess):
+    """Multi-dimensional Ito process."""
+
+    def sample(
+        self, T: float, n_time_grid: int, x0: float, n_paths: int = 1
+    ) -> np.ndarray:
+        """Generate sample paths of the Ito process."""
+        # Sanity check for input parameters
+        validate_common_sampling_parameters(T, n_time_grid, n_paths)
 
         # Run the Euler-Maruyama scheme
         dt = T / n_time_grid
