@@ -3,11 +3,12 @@
 """Continuous time stochastic processes."""
 
 from abc import ABC, abstractmethod
-from typing import Callable
+from typing import Callable, Type
 
 import numpy as np
 from numpy.core.umath_tests import matrix_multiply
 
+from .distributions import Distribution
 from .utils import (
     validate_callable_args,
     validate_common_sampling_parameters,
@@ -353,10 +354,47 @@ class PoissonProcess(StochasticProcess):
 
         dt = T / n_time_grid
         increments = np.random.poisson(
-            lam=self.intensity * dt, size=(n_paths, n_time_grid)
+            lam=self.intensity * dt, size=(n_paths, n_time_grid - 1)
         )
         paths = np.cumsum(increments, axis=1)
         paths = np.insert(paths, 0, x0, axis=1)
         paths = np.squeeze(paths)
 
         return paths
+
+
+class CompoundPoissonProcess(PoissonProcess):
+    """Compound Poisson process."""
+
+    def __init__(
+        self, intensity: float, increment_dist: Type[Distribution]
+    ) -> None:
+        """Initialize a compound Poisson process."""
+        self.intensity = intensity
+        self.increment_dist = increment_dist
+
+    @property
+    def increment_dist(self) -> Type[Distribution]:
+        """Jump distribution getter."""
+        return self._increment_dist
+
+    @increment_dist.setter
+    def increment_dist(self, value: Type[Distribution]) -> None:
+        """Jump distribution setter."""
+        if not isinstance(value, Distribution):
+            raise ValueError("'increment_dist' must be of type Distribution.")
+        self._increment_dist = value
+
+    def sample(
+        self, T: float, n_time_grid: int, x0: float = 0, n_paths: int = 1
+    ) -> np.ndarray:
+        """Generate sample paths of the compound Poisson process."""
+        pp_paths = super().sample(T, n_time_grid, 0, n_paths)
+        paths = []
+        for i in range(n_paths):
+            terminal = pp_paths[i, -1]
+            increments = self.increment_dist.sample(size=terminal)
+            path = np.cumsum(increments)
+            path = np.insert(path, 0, x0)[pp_paths[i]]
+            paths.append(path)
+        return np.vstack(paths)
