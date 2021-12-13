@@ -12,6 +12,7 @@ from .distributions import Distribution
 from .utils import (
     validate_callable_args,
     validate_common_sampling_parameters,
+    validate_nonnegative_number,
     validate_posdef_matrix,
     validate_positive_integer,
     validate_positive_number,
@@ -132,7 +133,9 @@ class MultiDimensionalBrownianMotion(StochasticProcess):
         self._sigma = value
 
     @staticmethod
-    def _check_parameter_compatibility(mu, sigma) -> None:
+    def _check_parameter_compatibility(
+        mu: np.ndarray, sigma: np.ndarray
+    ) -> None:
         """Check the compatibility of the input parameters."""
         if len(mu) != sigma.shape[0]:
             raise ValueError("Incompatible dimensions of 'mu' and 'sigma'.")
@@ -260,10 +263,13 @@ class OrnsteinUhlenbeckProcess(StochasticProcess):
 class ItoProcess(StochasticProcess):
     """Ito process."""
 
-    def __init__(self, mu: Callable, sigma: Callable) -> None:
+    def __init__(
+        self, mu: Callable, sigma: Callable, positive: bool = False
+    ) -> None:
         """Initialize an Ito process."""
         self.mu = mu
         self.sigma = sigma
+        self.positive = positive
 
     @property
     def mu(self) -> Callable:
@@ -287,10 +293,22 @@ class ItoProcess(StochasticProcess):
         validate_callable_args(value, 2, "sigma")
         self._sigma = value
 
+    @property
+    def positive(self) -> bool:
+        """Positive getter."""
+        return self._positive
+
+    @positive.setter
+    def positive(self, value: bool) -> None:
+        if not isinstance(value, bool):
+            raise TypeError("positive must be a boolean.")
+        self._positive = value
+
     def sample(
         self, T: float, n_time_grid: int, x0: float, n_paths: int = 1
     ) -> np.ndarray:
         """Generate sample paths of the Ito process."""
+        # TODO: Add a generic scheme to ensure positivity if positive=True.
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
 
@@ -426,3 +444,77 @@ class CompoundPoissonProcess(PoissonProcess):
             path = np.insert(path, 0, x0)[pp_paths[i]]
             paths.append(path)
         return np.vstack(paths)
+
+
+class CoxIngersollRossProcess(StochasticProcess):
+    """Cox-Ingersoll-Ross process."""
+
+    def __init__(self, theta: float, mu: float, sigma: float) -> None:
+        """Initialize an Ornstein-Uhlenbeck process."""
+        self.theta = theta
+        self.mu = mu
+        self.sigma = sigma
+
+    @property
+    def theta(self) -> float:
+        """Theta getter."""
+        return self._theta
+
+    @theta.setter
+    def theta(self, value: float) -> None:
+        """Theta setter."""
+        validate_positive_number(value, "theta")
+        if hasattr(self, "_mu") and hasattr(self, "_sigma"):
+            self._check_feller_condition(value, self._mu, self._sigma)
+        self._theta = value
+
+    @property
+    def mu(self) -> float:
+        """Mu getter."""
+        return self._mu
+
+    @mu.setter
+    def mu(self, value: float) -> None:
+        """Mu setter."""
+        validate_positive_number(value, "mu")
+        if hasattr(self, "_theta") and hasattr(self, "_sigma"):
+            self._check_feller_condition(self._theta, value, self._sigma)
+        self._mu = value
+
+    @property
+    def sigma(self) -> float:
+        """Sigma getter."""
+        return self._sigma
+
+    @sigma.setter
+    def sigma(self, value: float) -> None:
+        """Sigma setter."""
+        validate_positive_number(value, "sigma")
+        if hasattr(self, "_theta") and hasattr(self, "_mu"):
+            self._check_feller_condition(self._theta, self._mu, value)
+        self._sigma = value
+
+    @staticmethod
+    def _check_feller_condition(theta: float, mu: float, sigma: float) -> None:
+        """Check that the Feller condition holds."""
+        if not 2 * theta * mu >= sigma ** 2:
+            raise ValueError(
+                "The Feller condition for the parameters "
+                "'theta', 'mu' and 'sigma' does not hold."
+            )
+
+    def sample(
+        self, T: float, n_time_grid: int, x0: float = 0, n_paths: int = 1
+    ) -> np.ndarray:
+        """Generate sample paths of the Cox-Ingersoll-Ross process."""
+        # TODO: Use a scheme that ensures positivity.
+        # Sanity check for input parameters
+        validate_common_sampling_parameters(T, n_time_grid, n_paths)
+        validate_positive_number(x0, "x0")
+
+        cir = ItoProcess(
+            lambda x, t: self.theta * (self.mu - x),
+            lambda x, t: self.sigma * np.sqrt(np.abs(x)),
+        )
+        paths = cir.sample(T, n_time_grid, x0, n_paths)
+        return paths
