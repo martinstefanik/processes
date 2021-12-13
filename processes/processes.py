@@ -3,6 +3,7 @@
 """Continuous time stochastic processes."""
 
 from abc import ABC, abstractmethod
+from math import ceil
 from typing import Callable, Type
 
 import numpy as np
@@ -13,6 +14,7 @@ from .utils import (
     validate_callable_args,
     validate_common_sampling_parameters,
     validate_nonnegative_number,
+    validate_number,
     validate_posdef_matrix,
     validate_positive_integer,
     validate_positive_number,
@@ -516,3 +518,53 @@ class BesselProcess(StochasticProcess):
         )
         paths = squared_bessel.sample(T, n_time_grid, x0, n_paths)
         return np.sqrt(paths)
+
+
+class FractionalBrownianMotion(StochasticProcess):
+    """Fractional Brownian motion."""
+
+    def __init__(self, hurst: float) -> None:
+        self.hurst = hurst
+
+    @property
+    def hurst(self) -> float:  # noqa: D102
+        return self._hurst
+
+    @hurst.setter
+    def hurst(self, value: float) -> None:  # noqa: D102
+        validate_number(value, "hurst")
+        if not value > 0 and not value < 1:
+            raise ValueError("'hurst' must be in (0, 1).")
+        self._hurst = value
+
+    def sample(
+        self, T: float, n_time_grid: int, x0: float = 0, n_paths: int = 1
+    ) -> np.ndarray:
+        """Generate sample paths of the fractional Brownian motion."""
+        # Sanity check for input parameters
+        validate_common_sampling_parameters(T, n_time_grid, n_paths)
+
+        dt = T / n_time_grid
+        size = 2 ** ceil(np.log2(n_time_grid - 2)) + 1
+        sqrt_eigenvalues = np.sqrt(
+            np.fft.irfft(self._acf_fractional_gaussian_noise(self.hurst, size))[
+                :size
+            ]
+        )
+        scale = dt ** (2 * self.hurst) * 2 ** (1 / 2) * (size - 1)
+
+        z = np.random.normal(scale=scale, size=2 * size).view(complex)
+        z[0] = z[0].real * 2 ** (1 / 2)
+        z[-1] = z[-1].real * 2 ** (1 / 2)
+        increments = np.fft.irfft(sqrt_eigenvalues * z)[:n_time_grid]
+        paths = np.cumsum(increments)
+        paths = np.squeeze(paths)
+        return paths
+
+    @staticmethod
+    def _acf_fractional_gaussian_noise(hurst, n):
+        """Autocovariance function of fractional Gaussian noise."""
+        rho = np.arange(n + 1) ** (2 * hurst)
+        rho = 1 / 2 * (rho[2:] - 2 * rho[1:-1] + rho[:-2])
+        rho = np.insert(rho, 0, 1)
+        return rho
