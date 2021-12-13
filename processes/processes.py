@@ -42,18 +42,15 @@ class BrownianMotion(StochasticProcess):
     """Brownian motion."""
 
     def __init__(self, mu: float = 0, sigma: float = 1) -> None:
-        """Initialize a Brownian motion."""
         self.mu = mu
         self.sigma = sigma
 
     @property
-    def sigma(self) -> float:
-        """Sigma getter."""
+    def sigma(self) -> float:  # noqa: D102
         return self._sigma
 
     @sigma.setter
-    def sigma(self, value: float) -> None:
-        """Sigma setter."""
+    def sigma(self, value: float) -> None:  # noqa: D102
         validate_positive_number(value, "sigma")
         self._sigma = value
 
@@ -103,30 +100,25 @@ class MultiDimensionalBrownianMotion(StochasticProcess):
     """Multi-dimensional Brownian motion."""
 
     def __init__(self, mu: np.ndarray, sigma: np.ndarray) -> None:
-        """Initialize a multi-dimensional Brownian motion."""
         self.mu = mu
         self.sigma = sigma
 
     @property
-    def mu(self) -> np.ndarray:
-        """Mu getter."""
+    def mu(self) -> np.ndarray:  # noqa: D102
         return self._mu
 
     @mu.setter
-    def mu(self, value: np.ndarray) -> None:
-        """Mu setter."""
+    def mu(self, value: np.ndarray) -> None:  # noqa: D102
         if hasattr(self, "_sigma"):
             self._check_parameter_compatibility(value, self._sigma)
         self._mu = value
 
     @property
-    def sigma(self) -> np.ndarray:
-        """Sigma getter."""
+    def sigma(self) -> np.ndarray:  # noqa: D102
         return self._sigma
 
     @sigma.setter
-    def sigma(self, value: np.ndarray) -> None:
-        """Sigma setter."""
+    def sigma(self, value: np.ndarray) -> None:  # noqa: D102
         validate_posdef_matrix(value, "sigma")
         if hasattr(self, "_mu"):
             self._check_parameter_compatibility(self._mu, value)
@@ -165,17 +157,14 @@ class TimeChangedBrownianMotion(StochasticProcess):
     """Time-changed Brownian motion."""
 
     def __init__(self, time_change: Callable) -> None:
-        """Initialize a time-changed Brownian motion."""
         self.time_change = time_change
 
     @property
-    def time_change(self) -> Callable:
-        """Time change getter."""
+    def time_change(self) -> Callable:  # noqa: D102
         return self._time_change
 
     @time_change.setter
-    def time_change(self, value: Callable) -> None:
-        """Time change setter."""
+    def time_change(self, value: Callable) -> None:  # noqa: D102
         validate_callable_args(value, 1, "time_change")
         self._time_change = value
 
@@ -206,24 +195,20 @@ class OrnsteinUhlenbeckProcess(StochasticProcess):
         self.sigma = sigma
 
     @property
-    def theta(self) -> float:
-        """Theta getter."""
+    def theta(self) -> float:  # noqa: D102
         return self._theta
 
     @theta.setter
-    def theta(self, value: float) -> None:
-        """Theta setter."""
+    def theta(self, value: float) -> None:  # noqa: D102
         validate_positive_number(value, "theta")
         self._theta = value
 
     @property
-    def sigma(self) -> float:
-        """Sigma getter."""
+    def sigma(self) -> float:  # noqa: D102
         return self._sigma
 
     @sigma.setter
-    def sigma(self, value: float) -> None:
-        """Sigma setter."""
+    def sigma(self, value: float) -> None:  # noqa: D102
         validate_positive_number(value, "sigma")
         self._sigma = value
 
@@ -265,36 +250,30 @@ class ItoProcess(StochasticProcess):
     def __init__(
         self, mu: Callable, sigma: Callable, positive: bool = False
     ) -> None:
-        """Initialize an Ito process."""
         self.mu = mu
         self.sigma = sigma
         self.positive = positive
 
     @property
-    def mu(self) -> Callable:
-        """Mu getter."""
+    def mu(self) -> Callable:  # noqa: D102
         return self._mu
 
     @mu.setter
-    def mu(self, value: Callable) -> None:
-        """Mu setter."""
+    def mu(self, value: Callable) -> None:  # noqa: D102
         validate_callable_args(value, 2, "mu")
         self._mu = value
 
     @property
-    def sigma(self) -> Callable:
-        """Sigma getter."""
+    def sigma(self) -> Callable:  # noqa: D102
         return self._sigma
 
     @sigma.setter
-    def sigma(self, value: Callable) -> None:
-        """Sigma setter."""
+    def sigma(self, value: Callable) -> None:  # noqa: D102
         validate_callable_args(value, 2, "sigma")
         self._sigma = value
 
     @property
-    def positive(self) -> bool:
-        """Positive getter."""
+    def positive(self) -> bool:  # noqa: D102
         return self._positive
 
     @positive.setter
@@ -374,17 +353,14 @@ class PoissonProcess(StochasticProcess):
     """Poisson process."""
 
     def __init__(self, intensity: float) -> None:
-        """Initialize a Poisson process."""
         self.intensity = intensity
 
     @property
-    def intensity(self) -> float:
-        """Intensity getter."""
+    def intensity(self) -> float:  # noqa: D102
         return self._intensity
 
     @intensity.setter
-    def intensity(self, value: float) -> None:
-        """Intensity setter."""
+    def intensity(self, value: float) -> None:  # noqa: D102
         validate_positive_number(value, "intensity")
         self._intensity = value
 
@@ -414,18 +390,15 @@ class CompoundPoissonProcess(PoissonProcess):
     def __init__(
         self, intensity: float, increment_dist: Type[Distribution]
     ) -> None:
-        """Initialize a compound Poisson process."""
         self.intensity = intensity
         self.increment_dist = increment_dist
 
     @property
-    def increment_dist(self) -> Type[Distribution]:
-        """Jump distribution getter."""
+    def increment_dist(self) -> Type[Distribution]:  # noqa: D102
         return self._increment_dist
 
     @increment_dist.setter
-    def increment_dist(self, value: Type[Distribution]) -> None:
-        """Jump distribution setter."""
+    def increment_dist(self, value: Type[Distribution]) -> None:  # noqa: D102
         if not isinstance(value, Distribution):
             raise ValueError("'increment_dist' must be of type Distribution.")
         self._increment_dist = value
@@ -449,45 +422,38 @@ class CoxIngersollRossProcess(StochasticProcess):
     """Cox-Ingersoll-Ross process."""
 
     def __init__(self, theta: float, mu: float, sigma: float) -> None:
-        """Initialize a Cox-Ingersoll-Ross process."""
         self.theta = theta
         self.mu = mu
         self.sigma = sigma
 
     @property
-    def theta(self) -> float:
-        """Theta getter."""
+    def theta(self) -> float:  # noqa: D102
         return self._theta
 
     @theta.setter
-    def theta(self, value: float) -> None:
-        """Theta setter."""
+    def theta(self, value: float) -> None:  # noqa: D102
         validate_positive_number(value, "theta")
         if hasattr(self, "_mu") and hasattr(self, "_sigma"):
             self._check_feller_condition(value, self._mu, self._sigma)
         self._theta = value
 
     @property
-    def mu(self) -> float:
-        """Mu getter."""
+    def mu(self) -> float:  # noqa: D102
         return self._mu
 
     @mu.setter
-    def mu(self, value: float) -> None:
-        """Mu setter."""
+    def mu(self, value: float) -> None:  # noqa: D102
         validate_positive_number(value, "mu")
         if hasattr(self, "_theta") and hasattr(self, "_sigma"):
             self._check_feller_condition(self._theta, value, self._sigma)
         self._mu = value
 
     @property
-    def sigma(self) -> float:
-        """Sigma getter."""
+    def sigma(self) -> float:  # noqa: D102
         return self._sigma
 
     @sigma.setter
-    def sigma(self, value: float) -> None:
-        """Sigma setter."""
+    def sigma(self, value: float) -> None:  # noqa: D102
         validate_positive_number(value, "sigma")
         if hasattr(self, "_theta") and hasattr(self, "_mu"):
             self._check_feller_condition(self._theta, self._mu, value)
@@ -523,17 +489,14 @@ class BesselProcess(StochasticProcess):
     """Bessel process."""
 
     def __init__(self, n: float) -> None:
-        """Initialize a Bessel process."""
         self.n = n
 
     @property
-    def n(self) -> float:
-        """N getter."""
+    def n(self) -> float:  # noqa: D102
         return self._n
 
     @n.setter
-    def n(self, value: float) -> None:
-        """N setter."""
+    def n(self, value: float) -> None:  # noqa: D102
         validate_nonnegative_number(value, "n")
         self._n = value
 

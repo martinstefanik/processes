@@ -21,21 +21,18 @@ class Distribution(ABC):
 
 
 class NormalDistribution(Distribution):
-    """Normal probability distribution."""
+    """Normal distribution."""
 
     def __init__(self, mu: float = 0, sigma: float = 1) -> None:
-        """Initialize a normal distribution."""
         self.mu = mu
         self.sigma = sigma
 
     @property
-    def sigma(self) -> float:
-        """Sigma getter."""
+    def sigma(self) -> float:  # noqa: D102
         return self._sigma
 
     @sigma.setter
-    def sigma(self, sigma: float) -> None:
-        """Sigma setter."""
+    def sigma(self, sigma: float) -> None:  # noqa: D102
         validate_positive_number(sigma, "sigma")
         self._sigma = sigma
 
@@ -45,7 +42,7 @@ class NormalDistribution(Distribution):
 
 
 class LogNormalDistribution(NormalDistribution):
-    """Log-normal probability distribution."""
+    """Log-normal distribution."""
 
     def sample(self, size: Sequence[int] = 1) -> Union[np.ndarray, float]:
         """Generate a sample from the probability distribution."""
