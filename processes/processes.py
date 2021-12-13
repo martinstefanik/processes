@@ -518,3 +518,39 @@ class CoxIngersollRossProcess(StochasticProcess):
         )
         paths = cir.sample(T, n_time_grid, x0, n_paths)
         return paths
+
+
+class BesselProcess(StochasticProcess):
+    """Bessel process."""
+
+    def __init__(self, n: float) -> None:
+        """Initialize a Bessel process."""
+        self.n = n
+
+    @property
+    def n(self) -> float:
+        """N getter."""
+        return self._n
+
+    @n.setter
+    def n(self, value: float) -> None:
+        """N setter."""
+        validate_nonnegative_number(value, "n")
+        self._n = value
+
+    def sample(
+        self, T: float, n_time_grid: int, x0: float = 0, n_paths: int = 1
+    ) -> np.ndarray:
+        """Generate sample paths of the Bessel process."""
+        # TODO: Use a scheme that ensures positivity.
+        # Sanity check for input parameters
+        validate_common_sampling_parameters(T, n_time_grid, n_paths)
+        validate_nonnegative_number(x0, "x0")
+
+        # Sample paths of the squared Bessel process for numerical stability
+        squared_bessel = ItoProcess(
+            lambda x, t: self.n,
+            lambda x, t: 2 * np.sqrt(np.abs(x)),
+        )
+        paths = squared_bessel.sample(T, n_time_grid, x0, n_paths)
+        return np.sqrt(paths)
