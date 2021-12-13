@@ -201,7 +201,6 @@ class OrnsteinUhlenbeckProcess(StochasticProcess):
     """Ornstein-Uhlenbeck process."""
 
     def __init__(self, theta: float, mu: float, sigma: float) -> None:
-        """Initialize an Ornstein-Uhlenbeck process."""
         self.theta = theta
         self.mu = mu
         self.sigma = sigma
@@ -450,7 +449,7 @@ class CoxIngersollRossProcess(StochasticProcess):
     """Cox-Ingersoll-Ross process."""
 
     def __init__(self, theta: float, mu: float, sigma: float) -> None:
-        """Initialize an Ornstein-Uhlenbeck process."""
+        """Initialize a Cox-Ingersoll-Ross process."""
         self.theta = theta
         self.mu = mu
         self.sigma = sigma
