@@ -657,3 +657,51 @@ class FractionalBrownianMotion(StochasticProcess):
         rho = 1 / 2 * (rho[2:] - 2 * rho[1:-1] + rho[:-2])
         rho = np.insert(rho, 0, 1)
         return rho
+
+
+class GammaProcess(StochasticProcess):
+    """Gamma process."""
+
+    def __init__(self, shape: float, scale: float) -> None:
+        self.shape = shape
+        self.scale = scale
+
+    @property
+    def shape(self) -> float:  # noqa: D102
+        return self._shape
+
+    @shape.setter
+    def shape(self, value: float) -> None:
+        validate_positive_number(value, "shape")
+        self._shape = value
+
+    @property
+    def scale(self) -> float:  # noqa: D102
+        return self._scale
+
+    @scale.setter
+    def scale(self, value: float) -> None:
+        validate_positive_number(value, "scale")
+        self._scale = value
+
+    def sample(
+        self, T: float, n_time_grid: int, x0: float = 0, n_paths: int = 1
+    ) -> np.ndarray:
+        """Generate sample paths of the Gamma process."""
+        # Sanity check for input parameters
+        validate_common_sampling_parameters(T, n_time_grid, n_paths)
+        validate_number(x0, "x0")
+
+        dt = T / n_time_grid
+        increments = np.random.gamma(
+            shape=self.shape * dt,
+            scale=self.scale,
+            size=(n_paths, n_time_grid - 1),
+        )
+        paths = np.cumsum(increments, axis=1)
+        paths = np.insert(paths, 0, 0, axis=1)
+        paths = np.squeeze(paths)
+        if x0 != 0:
+            paths += x0
+
+        return paths
