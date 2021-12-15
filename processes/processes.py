@@ -48,6 +48,15 @@ class BrownianMotion(StochasticProcess):
         self.sigma = sigma
 
     @property
+    def mu(self) -> float:  # noqa: D102
+        return self._mu
+
+    @mu.setter
+    def mu(self, value: float) -> None:  # noqa: D102
+        validate_number(value, "mu")
+        self._mu = value
+
+    @property
     def sigma(self) -> float:  # noqa: D102
         return self._sigma
 
@@ -179,8 +188,9 @@ class TimeChangedBrownianMotion(StochasticProcess):
 
         tc_grid = self.time_change(np.linspace(0, T, num=n_time_grid))
         tc_dt = np.diff(tc_grid)
-        std_increments = np.random.normal(size=(n_paths, n_time_grid - 1))
-        increments = np.sqrt(tc_dt) * std_increments
+        increments = np.random.normal(
+            scale=tc_dt, size=(n_paths, n_time_grid - 1)
+        )
         paths = np.cumsum(increments, axis=1)
         paths = np.insert(paths, 0, x0, axis=1)
         paths = np.squeeze(paths)
@@ -204,6 +214,15 @@ class OrnsteinUhlenbeckProcess(StochasticProcess):
     def theta(self, value: float) -> None:  # noqa: D102
         validate_positive_number(value, "theta")
         self._theta = value
+
+    @property
+    def mu(self) -> float:  # noqa: D102
+        return self._mu
+
+    @mu.setter
+    def mu(self, value: float) -> None:  # noqa: D102
+        validate_number(value, "mu")
+        self._mu = value
 
     @property
     def sigma(self) -> float:  # noqa: D102
@@ -281,7 +300,7 @@ class ItoProcess(StochasticProcess):
     @positive.setter
     def positive(self, value: bool) -> None:
         if not isinstance(value, bool):
-            raise TypeError("positive must be a boolean.")
+            raise TypeError("'positive' must be a boolean.")
         self._positive = value
 
     def sample(
