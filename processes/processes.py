@@ -539,6 +539,18 @@ class BesselProcess(StochasticProcess):
         return np.sqrt(paths)
 
 
+class InverseBesselProcess(BesselProcess):
+    """Inverse Bessel process."""
+
+    def sample(
+        self, T: float, n_time_grid: int, x0: float = 1, n_paths: int = 1
+    ) -> np.ndarray:
+        """Generate sample paths of the inverse Bessel process."""
+        paths = super().sample(T, n_time_grid, x0, n_paths)
+        paths = 1 / paths
+        return paths
+
+
 class FractionalBrownianMotion(StochasticProcess):
     """Fractional Brownian motion."""
 
