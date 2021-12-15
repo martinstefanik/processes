@@ -4,15 +4,18 @@
 
 from abc import ABC, abstractmethod
 from math import ceil
-from typing import Callable, Type
+from typing import Callable, Type, Union
 
 import numpy as np
 from numpy.core.umath_tests import matrix_multiply
 
 from .distributions import Distribution
 from .utils import (
+    get_time_increments,
+    validate_1d_array,
     validate_callable_args,
     validate_common_sampling_parameters,
+    validate_nonnegative_1d_array,
     validate_nonnegative_number,
     validate_number,
     validate_posdef_matrix,
@@ -52,7 +55,7 @@ class BrownianMotion(StochasticProcess):
         return self._mu
 
     @mu.setter
-    def mu(self, value: float) -> None:  # noqa: D102
+    def mu(self, value: float) -> None:
         validate_number(value, "mu")
         self._mu = value
 
@@ -61,16 +64,17 @@ class BrownianMotion(StochasticProcess):
         return self._sigma
 
     @sigma.setter
-    def sigma(self, value: float) -> None:  # noqa: D102
+    def sigma(self, value: float) -> None:
         validate_positive_number(value, "sigma")
         self._sigma = value
 
     def sample(
-        self, T: float, n_time_grid: int, x0: float = 0, n_paths: float = 1
+        self, T: float, n_time_grid: int, x0: float = 0, n_paths: int = 1
     ) -> np.ndarray:
         """Generate sample paths of the Brownian motion."""
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
+        validate_number(x0, "x0")
 
         dt = T / n_time_grid
         increments = np.random.normal(
@@ -79,7 +83,32 @@ class BrownianMotion(StochasticProcess):
             size=(n_paths, n_time_grid - 1),
         )
         paths = np.cumsum(increments, axis=1)
-        paths = np.insert(paths, 0, x0, axis=1)
+        paths = np.insert(paths, 0, 0, axis=1)
+        paths = np.squeeze(paths)
+        if x0 != 0:
+            paths += x0
+
+        return paths
+
+    def _sample_at(
+        self, times: np.ndarray, x0: float = 0, n_paths: int = 1
+    ) -> np.ndarray:
+        """Generate sample paths of the Brownian motion at given times."""
+        # Sanity check for input parameters
+        validate_nonnegative_1d_array(times, "times")
+        validate_number(x0, "x0")
+
+        if times[0] != 0:  # we need an increment from 0 in any case
+            times = np.insert(times, 0, 0)
+        dt = get_time_increments(times)
+        increments = np.random.normal(
+            loc=self.mu * dt,
+            scale=self.sigma * np.sqrt(dt),
+            size=(n_paths, len(dt)),
+        )
+        paths = np.cumsum(increments, axis=1)
+        if x0 != 0:
+            paths += x0
         paths = np.squeeze(paths)
 
         return paths
@@ -94,6 +123,7 @@ class GeometricBrownianMotion(BrownianMotion):
         """Generate sample paths of the geometric Brownian motion."""
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
+        validate_number(x0, "x0")
 
         bm_paths = super().sample(
             T=T, n_time_grid=n_time_grid, x0=0, n_paths=n_paths
@@ -107,7 +137,7 @@ class GeometricBrownianMotion(BrownianMotion):
         return paths
 
 
-class MultiDimensionalBrownianMotion(StochasticProcess):
+class MultidimensionalBrownianMotion(StochasticProcess):
     """Multi-dimensional Brownian motion."""
 
     def __init__(self, mu: np.ndarray, sigma: np.ndarray) -> None:
@@ -119,7 +149,7 @@ class MultiDimensionalBrownianMotion(StochasticProcess):
         return self._mu
 
     @mu.setter
-    def mu(self, value: np.ndarray) -> None:  # noqa: D102
+    def mu(self, value: np.ndarray) -> None:
         if hasattr(self, "_sigma"):
             self._check_parameter_compatibility(value, self._sigma)
         self._mu = value
@@ -129,7 +159,7 @@ class MultiDimensionalBrownianMotion(StochasticProcess):
         return self._sigma
 
     @sigma.setter
-    def sigma(self, value: np.ndarray) -> None:  # noqa: D102
+    def sigma(self, value: np.ndarray) -> None:
         validate_posdef_matrix(value, "sigma")
         if hasattr(self, "_mu"):
             self._check_parameter_compatibility(self._mu, value)
@@ -144,21 +174,32 @@ class MultiDimensionalBrownianMotion(StochasticProcess):
             raise ValueError("Incompatible dimensions of 'mu' and 'sigma'.")
 
     def sample(
-        self, x0: np.ndarray, T: float, n_time_grid: int, n_paths: int = 1
+        self,
+        x0: Union[np.ndarray, float],
+        T: float,
+        n_time_grid: int,
+        n_paths: int = 1,
     ) -> np.ndarray:
         """Generate sample paths of the multi-dimensional Brownian motion."""
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
+        if isinstance(x0, float):
+            x0 = np.array([x0] * len(self.mu))
+        else:
+            validate_1d_array(x0, "x0")
+            if len(x0) != len(self.mu):
+                raise ValueError(f"'x0' of unexpected length: {len(x0)}.")
 
         dt = T / n_time_grid
-        std_increments = np.random.normal(
-            size=(n_paths, n_time_grid - 1, len(self.mu))
-        )
-        increments = np.sqrt(dt) * np.tensordot(
-            std_increments, self.sigma.T, axes=1
+        increments = np.random.multivariate_normal(
+            mean=self.mu * dt,
+            cov=self.sigma * dt,
+            size=(n_paths, n_time_grid - 1),
         )
         paths = np.cumsum(increments, axis=1)
-        paths = np.insert(paths, 0, x0, axis=1)
+        paths = np.insert(paths, 0, 0, axis=1)
+        if not np.all(x0 == 0):
+            paths += np.reshape(x0, (1, 1, len(x0)))
         paths = np.squeeze(paths)
 
         return paths
@@ -175,25 +216,22 @@ class TimeChangedBrownianMotion(StochasticProcess):
         return self._time_change
 
     @time_change.setter
-    def time_change(self, value: Callable) -> None:  # noqa: D102
+    def time_change(self, value: Callable) -> None:
         validate_callable_args(value, 1, "time_change")
         self._time_change = value
 
     def sample(
-        self, T: float, n_time_grid: int, x0: float = 0, n_paths: float = 1
+        self, T: float, n_time_grid: int, x0: float = 0, n_paths: int = 1
     ) -> np.ndarray:
         """Generate sample paths of the time-changed Brownian motion."""
         # Sanity check for input parameters
         validate_common_sampling_parameters()
+        validate_number(x0, "x0")
 
-        tc_grid = self.time_change(np.linspace(0, T, num=n_time_grid))
-        tc_dt = np.diff(tc_grid)
-        increments = np.random.normal(
-            scale=tc_dt, size=(n_paths, n_time_grid - 1)
-        )
-        paths = np.cumsum(increments, axis=1)
-        paths = np.insert(paths, 0, x0, axis=1)
-        paths = np.squeeze(paths)
+        times = self.time_change(np.linspace(0, T, num=n_time_grid))
+        paths = BrownianMotion()._sample_at(times, 0, n_paths)
+        if x0 != 0:
+            paths += x0
 
         return paths
 
@@ -211,7 +249,7 @@ class OrnsteinUhlenbeckProcess(StochasticProcess):
         return self._theta
 
     @theta.setter
-    def theta(self, value: float) -> None:  # noqa: D102
+    def theta(self, value: float) -> None:
         validate_positive_number(value, "theta")
         self._theta = value
 
@@ -220,7 +258,7 @@ class OrnsteinUhlenbeckProcess(StochasticProcess):
         return self._mu
 
     @mu.setter
-    def mu(self, value: float) -> None:  # noqa: D102
+    def mu(self, value: float) -> None:
         validate_number(value, "mu")
         self._mu = value
 
@@ -229,7 +267,7 @@ class OrnsteinUhlenbeckProcess(StochasticProcess):
         return self._sigma
 
     @sigma.setter
-    def sigma(self, value: float) -> None:  # noqa: D102
+    def sigma(self, value: float) -> None:
         validate_positive_number(value, "sigma")
         self._sigma = value
 
@@ -239,6 +277,7 @@ class OrnsteinUhlenbeckProcess(StochasticProcess):
         """Generate sample paths of the Ornstein-Uhlenbeck process."""
         # Sanity check for input parameters
         validate_common_sampling_parameters()
+        validate_number(x0, "x0")
 
         # Generate the random part of the process
         time_changed_bm = TimeChangedBrownianMotion(
@@ -280,7 +319,7 @@ class ItoProcess(StochasticProcess):
         return self._mu
 
     @mu.setter
-    def mu(self, value: Callable) -> None:  # noqa: D102
+    def mu(self, value: Callable) -> None:
         validate_callable_args(value, 2, "mu")
         self._mu = value
 
@@ -289,7 +328,7 @@ class ItoProcess(StochasticProcess):
         return self._sigma
 
     @sigma.setter
-    def sigma(self, value: Callable) -> None:  # noqa: D102
+    def sigma(self, value: Callable) -> None:
         validate_callable_args(value, 2, "sigma")
         self._sigma = value
 
@@ -310,6 +349,7 @@ class ItoProcess(StochasticProcess):
         # TODO: Add a generic scheme to ensure positivity if positive=True.
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
+        validate_number(x0, "x0")
 
         # Run the Euler-Maruyama scheme
         dt = T / n_time_grid
@@ -332,21 +372,30 @@ class ItoProcess(StochasticProcess):
         return paths
 
 
-class MultiDimensionalItoProcess(ItoProcess):
+class MultidimensionalItoProcess(ItoProcess):
     """Multi-dimensional Ito process."""
 
     def sample(
         self, T: float, n_time_grid: int, x0: float, n_paths: int = 1
     ) -> np.ndarray:
-        """Generate sample paths of the Ito process."""
+        """Generate sample paths of the multi-dimensional Ito process."""
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
+        if isinstance(x0, float):
+            x0 = np.array([x0] * len(self.mu))
+        else:
+            validate_1d_array(x0, "x0")
+            if len(x0) != len(self.mu):
+                raise ValueError(f"'x0' of unexpected length: {len(x0)}.")
 
         # Run the Euler-Maruyama scheme
         dt = T / n_time_grid
         paths = np.zeros(shape=(n_paths, n_time_grid, self.d))
         paths[:, 0, :] = x0
         noise_cov = dt * np.eye(self.d)
+
+        # TODO: Check whether this cannot be improved both in terms of speed as
+        #       well as in terms of readability.
         for i in range(1, n_time_grid):
             t = (i - 1) * dt
             drift_coeffs = np.apply_along_axis(
@@ -381,7 +430,7 @@ class PoissonProcess(StochasticProcess):
         return self._intensity
 
     @intensity.setter
-    def intensity(self, value: float) -> None:  # noqa: D102
+    def intensity(self, value: float) -> None:
         validate_positive_number(value, "intensity")
         self._intensity = value
 
@@ -391,16 +440,17 @@ class PoissonProcess(StochasticProcess):
         """Generate sample paths of the Poisson process."""
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
-        if not isinstance(x0, int):
-            raise ValueError("'x0' must be an integer.")
+        validate_number(x0, "x0")
 
         dt = T / n_time_grid
         increments = np.random.poisson(
             lam=self.intensity * dt, size=(n_paths, n_time_grid - 1)
         )
         paths = np.cumsum(increments, axis=1)
-        paths = np.insert(paths, 0, x0, axis=1)
+        paths = np.insert(paths, 0, 0, axis=1)
         paths = np.squeeze(paths)
+        if x0 != 0:
+            paths += x0
 
         return paths
 
@@ -419,7 +469,7 @@ class CompoundPoissonProcess(PoissonProcess):
         return self._increment_dist
 
     @increment_dist.setter
-    def increment_dist(self, value: Type[Distribution]) -> None:  # noqa: D102
+    def increment_dist(self, value: Type[Distribution]) -> None:
         if not isinstance(value, Distribution):
             raise ValueError("'increment_dist' must be of type Distribution.")
         self._increment_dist = value
@@ -434,9 +484,13 @@ class CompoundPoissonProcess(PoissonProcess):
             terminal = pp_paths[i, -1]
             increments = self.increment_dist.sample(size=terminal)
             path = np.cumsum(increments)
-            path = np.insert(path, 0, x0)[pp_paths[i]]
+            path = np.insert(path, 0, 0)[pp_paths[i]]
             paths.append(path)
-        return np.vstack(paths)
+        paths = np.vstack(paths)
+        if x0 != 0:
+            paths += x0
+
+        return paths
 
 
 class CoxIngersollRossProcess(StochasticProcess):
@@ -452,7 +506,7 @@ class CoxIngersollRossProcess(StochasticProcess):
         return self._theta
 
     @theta.setter
-    def theta(self, value: float) -> None:  # noqa: D102
+    def theta(self, value: float) -> None:
         validate_positive_number(value, "theta")
         if hasattr(self, "_mu") and hasattr(self, "_sigma"):
             self._check_feller_condition(value, self._mu, self._sigma)
@@ -463,7 +517,7 @@ class CoxIngersollRossProcess(StochasticProcess):
         return self._mu
 
     @mu.setter
-    def mu(self, value: float) -> None:  # noqa: D102
+    def mu(self, value: float) -> None:
         validate_positive_number(value, "mu")
         if hasattr(self, "_theta") and hasattr(self, "_sigma"):
             self._check_feller_condition(self._theta, value, self._sigma)
@@ -474,7 +528,7 @@ class CoxIngersollRossProcess(StochasticProcess):
         return self._sigma
 
     @sigma.setter
-    def sigma(self, value: float) -> None:  # noqa: D102
+    def sigma(self, value: float) -> None:
         validate_positive_number(value, "sigma")
         if hasattr(self, "_theta") and hasattr(self, "_mu"):
             self._check_feller_condition(self._theta, self._mu, value)
@@ -503,6 +557,7 @@ class CoxIngersollRossProcess(StochasticProcess):
             lambda x, t: self.sigma * np.sqrt(np.abs(x)),
         )
         paths = cir.sample(T, n_time_grid, x0, n_paths)
+
         return paths
 
 
@@ -517,7 +572,7 @@ class BesselProcess(StochasticProcess):
         return self._n
 
     @n.setter
-    def n(self, value: float) -> None:  # noqa: D102
+    def n(self, value: float) -> None:
         validate_nonnegative_number(value, "n")
         self._n = value
 
@@ -536,6 +591,7 @@ class BesselProcess(StochasticProcess):
             lambda x, t: 2 * np.sqrt(np.abs(x)),
         )
         paths = squared_bessel.sample(T, n_time_grid, x0, n_paths)
+
         return np.sqrt(paths)
 
 
@@ -562,7 +618,7 @@ class FractionalBrownianMotion(StochasticProcess):
         return self._hurst
 
     @hurst.setter
-    def hurst(self, value: float) -> None:  # noqa: D102
+    def hurst(self, value: float) -> None:
         validate_number(value, "hurst")
         if not value > 0 and not value < 1:
             raise ValueError("'hurst' must be in (0, 1).")
@@ -574,6 +630,7 @@ class FractionalBrownianMotion(StochasticProcess):
         """Generate sample paths of the fractional Brownian motion."""
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
+        validate_number(x0, "x0")
 
         dt = T / n_time_grid
         size = 2 ** ceil(np.log2(n_time_grid - 2)) + 1
@@ -590,10 +647,11 @@ class FractionalBrownianMotion(StochasticProcess):
         increments = np.fft.irfft(sqrt_eigenvalues * z)[:n_time_grid]
         paths = np.cumsum(increments)
         paths = np.squeeze(paths)
+
         return paths
 
     @staticmethod
-    def _acf_fractional_gaussian_noise(hurst, n):
+    def _acf_fractional_gaussian_noise(hurst: float, n: float):
         """Autocovariance function of fractional Gaussian noise."""
         rho = np.arange(n + 1) ** (2 * hurst)
         rho = 1 / 2 * (rho[2:] - 2 * rho[1:-1] + rho[:-2])

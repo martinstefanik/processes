@@ -72,3 +72,26 @@ def validate_common_sampling_parameters(
     validate_positive_number(T, "T")
     validate_positive_integer(n_time_grid, "n_time_grid")
     validate_positive_integer(n_paths, "n_paths")
+
+
+def validate_1d_array(array: Any, name: str) -> None:
+    """Check that a given object is a one-dimensional numpy array."""
+    if not isinstance(array, np.ndarray):
+        raise TypeError(f"'{name}' must be a numpy array.")
+    if not np.squeeze(array).shape != (array.shape,):
+        raise ValueError(f"'{name}' must be one-dimensional.")
+
+
+def validate_nonnegative_1d_array(array: Any, name: str) -> None:
+    """Check that a given object is a non-negative, 1D numpy array."""
+    validate_1d_array(array, name)
+    if not np.all(array >= 0):
+        raise ValueError(f"'{name}' must be non-negative.")
+
+
+def get_time_increments(time_grid: np.ndarray) -> np.ndarray:
+    """Get time increments from a given time grid."""
+    dt = np.diff(time_grid)
+    if not np.all(dt > 0):
+        raise ValueError("'time_grid' must be strictly increasing.")
+    return dt
