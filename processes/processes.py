@@ -544,19 +544,67 @@ class CoxIngersollRossProcess(StochasticProcess):
             )
 
     def sample(
-        self, T: float, n_time_grid: int, x0: float = 0, n_paths: int = 1
+        self,
+        T: float,
+        n_time_grid: int,
+        x0: float = 0,
+        n_paths: int = 1,
+        algorithm: str = "alfonsi",
     ) -> np.ndarray:
         """Generate sample paths of the Cox-Ingersoll-Ross process."""
         # TODO: Use a scheme that ensures positivity.
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
         validate_positive_number(x0, "x0")
+        if not isinstance(algorithm, str):
+            raise ValueError("'algorithm' must be of type str.")
 
+        if algorithm == "euler-maruyama":
+            paths = self._euler_maruyama(T, n_time_grid, x0, n_paths)
+        elif algorithm == "alfonsi":
+            paths = self._alfonsi(T, n_time_grid, x0, n_paths)
+        else:
+            raise ValueError(f"Unknown algorithm: {algorithm}")
+
+        return paths
+
+    def _euler_maruyama(
+        self, T: float, n_time_grid: int, x0: float, n_paths: int
+    ) -> np.ndarray:
+        """Euler-Maruyama scheme for the Cox-Ingersoll-Ross process."""
         cir = ItoProcess(
             lambda x, t: self.theta * (self.mu - x),
             lambda x, t: self.sigma * np.sqrt(np.abs(x)),
         )
         paths = cir.sample(T, n_time_grid, x0, n_paths)
+        return paths
+
+    def _alfonsi(
+        self, T: float, n_time_grid: int, x0: float, n_paths: int
+    ) -> np.ndarray:
+        """
+        Alfonsi scheme for the Cox-Ingersoll-Ross process. See On the
+        discretization schemes for the CIR (and Bessel squared) processes
+        (2005).
+        """
+        dt = T / n_time_grid
+        noise_scale = np.sqrt(dt)
+        xi = 1 + self.theta / 2 * dt
+        two_xi = 2 * xi
+        eight_xi = 8 * xi
+        four_xi_squared = 4 * xi ** 2
+        rho = 4 * self.theta * self.mu - self.sigma ** 2
+
+        paths = np.zeros(shape=(n_paths, n_time_grid))
+        paths[:, 0] = x0
+        for i in range(1, n_time_grid):
+            noise = np.random.normal(scale=noise_scale, size=n_paths)
+            z = np.sqrt(paths[:, i - 1]) + self.sigma / 2 * noise
+            paths[:, i] = (
+                z / two_xi
+                + np.sqrt(z ** 2 / four_xi_squared + rho / eight_xi * dt)
+            ) ** 2
+        paths = np.squeeze(paths)
 
         return paths
 
