@@ -175,9 +175,9 @@ class MultidimensionalBrownianMotion(StochasticProcess):
 
     def sample(
         self,
-        x0: Union[np.ndarray, float],
         T: float,
         n_time_grid: int,
+        x0: Union[np.ndarray, float],
         n_paths: int = 1,
     ) -> np.ndarray:
         """Generate sample paths of the multi-dimensional Brownian motion."""
@@ -547,22 +547,23 @@ class CoxIngersollRossProcess(StochasticProcess):
         self,
         T: float,
         n_time_grid: int,
-        x0: float = 0,
+        x0: float,
         n_paths: int = 1,
         algorithm: str = "alfonsi",
     ) -> np.ndarray:
         """Generate sample paths of the Cox-Ingersoll-Ross process."""
-        # TODO: Use a scheme that ensures positivity.
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
         validate_positive_number(x0, "x0")
         if not isinstance(algorithm, str):
             raise ValueError("'algorithm' must be of type str.")
 
-        if algorithm == "euler-maruyama":
-            paths = self._euler_maruyama(T, n_time_grid, x0, n_paths)
-        elif algorithm == "alfonsi":
+        if algorithm == "alfonsi":
             paths = self._alfonsi(T, n_time_grid, x0, n_paths)
+        elif algorithm == "euler-maruyama":
+            paths = self._euler_maruyama(T, n_time_grid, x0, n_paths)
+        elif algorithm == "milstein-sym":
+            paths = self._milstein_sym(T, n_time_grid, x0, n_paths)
         else:
             raise ValueError(f"Unknown algorithm: {algorithm}")
 
@@ -604,6 +605,31 @@ class CoxIngersollRossProcess(StochasticProcess):
                 z / two_xi
                 + np.sqrt(z ** 2 / four_xi_squared + rho / eight_xi * dt)
             ) ** 2
+        paths = np.squeeze(paths)
+
+        return paths
+
+    def _milstein_sym(
+        self, T: float, n_time_grid: int, x0: float, n_paths: int
+    ) -> np.ndarray:
+        """
+        Symmetrized Milstein scheme for the Cox-Ingersoll-Ross process from the
+        paper Strong convergence of the symmetrized Milstein scheme for some
+        CEV-like SDEs.
+        """
+        dt = T / n_time_grid
+        noise_scale = np.sqrt(dt)
+
+        paths = np.zeros(shape=(n_paths, n_time_grid))
+        paths[:, 0] = x0
+        for i in range(1, n_time_grid):
+            noise = np.random.normal(scale=noise_scale, size=n_paths)
+            paths[:, i] = np.abs(
+                paths[:, i - 1]
+                + self.theta * (self.mu - paths[:, i - 1]) * dt
+                + self.sigma * np.sqrt(np.abs(paths[:, i - 1])) * noise
+                + self.sigma ** 2 / 4 * (noise ** 2 - dt)
+            )
         paths = np.squeeze(paths)
 
         return paths
