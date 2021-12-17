@@ -651,32 +651,127 @@ class BesselProcess(StochasticProcess):
         self._n = value
 
     def sample(
-        self, T: float, n_time_grid: int, x0: float = 0, n_paths: int = 1
+        self,
+        T: float,
+        n_time_grid: int,
+        x0: float = 0,
+        n_paths: int = 1,
+        algorithm: str = "alfonsi",
     ) -> np.ndarray:
         """Generate sample paths of the Bessel process."""
-        # TODO: Use a scheme that ensures positivity.
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
         validate_nonnegative_number(x0, "x0")
+        if not isinstance(algorithm, str):
+            raise ValueError("'algorithm' must be of type str.")
 
+        if algorithm == "euler-maruyama":
+            paths = self._euler_maruyama(T, n_time_grid, x0, n_paths)
+        elif algorithm == "alfonsi":
+            paths = self._alfonsi(T, n_time_grid, x0, n_paths)
+        elif algorithm == "radial":
+            paths = self._exact(T, n_time_grid, x0, n_paths)
+        else:
+            raise ValueError(f"Unknown algorithm: {algorithm}")
+
+        return paths
+
+    def _euler_maruyama(
+        self, T: float, n_time_grid: int, x0: float, n_paths: int
+    ) -> np.ndarray:
+        """Euler-Maruyama scheme for the Cox-Ingersoll-Ross process."""
         # Sample paths of the squared Bessel process for numerical stability
         squared_bessel = ItoProcess(
             lambda x, t: self.n,
             lambda x, t: 2 * np.sqrt(np.abs(x)),
         )
-        paths = squared_bessel.sample(T, n_time_grid, x0, n_paths)
+        paths = squared_bessel.sample(T, n_time_grid, x0 ** 2, n_paths)
+        paths = np.sqrt(paths)
+        return paths
 
-        return np.sqrt(paths)
+    def _alfonsi(
+        self, T: float, n_time_grid: int, x0: float, n_paths: int
+    ) -> np.ndarray:
+        """
+        Alfonsi scheme for the Bessel process. See On the discretization schemes
+        for the CIR (and Bessel squared) processes (2005).
+        """
+        # Sample paths of the squared Bessel process for numerical stability
+        dt = T / n_time_grid
+        noise_scale = np.sqrt(dt)
+        rho = (self.n - 2) * dt
+
+        paths = np.zeros(shape=(n_paths, n_time_grid))
+        paths[:, 0] = x0 ** 2
+        for i in range(1, n_time_grid):
+            noise = np.random.normal(scale=noise_scale, size=n_paths)
+            paths[:, i] = (noise + np.sqrt(noise + paths[:, i - 1] + rho)) ** 2
+        paths = np.squeeze(np.sqrt(paths))
+
+        return paths
+
+    def _radial(
+        self, T: float, n_time_grid: int, x0: float, n_paths: int
+    ) -> np.ndarray:
+        """
+        Exact sampling based on the representation of a Bessel process as the
+        radial part of n-dimensional Brownian motion.
+        """
+        if not isinstance(self.n, int):
+            raise ValueError(
+                "'radial' algorithm can only be used for integer 'n'."
+            )
+        bm = MultidimensionalBrownianMotion(
+            mu=np.zeros(self.n), sigma=np.eye(self.n)
+        )
+        bm_x0 = np.zeros(self.n)
+        bm_x0[0] = x0
+        paths = bm.sample(T, n_time_grid, bm_x0, n_paths)
+        paths = np.linalg.norm(paths, ord=2, axis=-1)
+
+        return paths
+
+    def _milstein_sym(
+        self, T: float, n_time_grid: int, x0: float, n_paths: int
+    ) -> np.ndarray:
+        """
+        Symmetrized Milstein scheme for the Bessel process from the
+        paper Strong convergence of the symmetrized Milstein scheme for some
+        CEV-like SDEs.
+        """
+        dt = T / n_time_grid
+        noise_scale = np.sqrt(dt)
+        n_dt = self.n * dt
+
+        # Sample paths of the squared Bessel process for numerical stability
+        paths = np.zeros(shape=(n_paths, n_time_grid))
+        paths[:, 0] = x0
+        for i in range(1, n_time_grid):
+            noise = np.random.normal(scale=noise_scale, size=n_paths)
+            paths[:, i] = np.abs(
+                paths[:, i - 1]
+                + n_dt
+                + 2 * np.sqrt(np.abs(paths[:, i - 1])) * noise
+                + (noise ** 2 - dt)
+            )
+        paths = np.squeeze(paths)
+
+        return paths
 
 
 class InverseBesselProcess(BesselProcess):
     """Inverse Bessel process."""
 
     def sample(
-        self, T: float, n_time_grid: int, x0: float = 1, n_paths: int = 1
+        self,
+        T: float,
+        n_time_grid: int,
+        x0: float,
+        n_paths: int = 1,
+        algorithm: str = "alfonsi",
     ) -> np.ndarray:
         """Generate sample paths of the inverse Bessel process."""
-        paths = super().sample(T, n_time_grid, x0, n_paths)
+        paths = super().sample(T, n_time_grid, x0, n_paths, algorithm)
         paths = 1 / paths
         return paths
 
