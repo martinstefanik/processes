@@ -874,3 +874,61 @@ class GammaProcess(StochasticProcess):
             paths += x0
 
         return paths
+
+
+class BrownianBridge(StochasticProcess):
+    """Brownian bridge."""
+
+    def __init__(self, a: float, b: float, T: float) -> None:
+        self.a = a
+        self.b = b
+        self.T = T
+
+    @property
+    def a(self) -> float:  # noqa: D102
+        return self._a
+
+    @a.setter
+    def a(self, value: float) -> None:
+        validate_number(value, "a")
+        self._a = value
+
+    @property
+    def b(self) -> float:  # noqa: D102
+        return self._b
+
+    @b.setter
+    def b(self, value: float) -> None:
+        validate_number(value, "b")
+        self._b = value
+
+    @property
+    def T(self) -> float:  # noqa: D102
+        return self._T
+
+    @T.setter
+    def T(self, value: float) -> None:
+        validate_positive_number(value, "T")
+        self._T = value
+
+    def sample(
+        self, n_time_grid: int, n_paths: int = 1, **kwargs
+    ) -> np.ndarray:
+        """Generate sample paths of the Brownian bridge."""
+        # Sanity check for input parameters
+        validate_positive_integer(n_time_grid, "n_time_grid")
+        validate_positive_integer(n_paths, "n_paths")
+
+        time = self.time_grid(self.T, n_time_grid)
+        bm_paths = BrownianMotion().sample(self.T, n_time_grid, 0, n_paths)
+        if n_paths > 1:  # unify the dimensionality regardless of n_paths
+            bm_paths = np.expand_dims(bm_paths, axis=0)
+        paths = (
+            self.a
+            + bm_paths
+            + time
+            * (self.b - self.a - np.reshape(bm_paths[:, -1], (-1, 1)))
+            / time[-1]
+        )
+        paths = np.squeeze(paths)
+        return paths
