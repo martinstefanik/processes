@@ -29,6 +29,12 @@ def validate_nonnegative_number(value: Any, name: str) -> None:
         raise ValueError(f"'{name}' must be nonnegative.")
 
 
+def validate_integer(value: Any, name: str) -> None:
+    """Check that a given object is an integer."""
+    if not isinstance(value, int):
+        raise TypeError(f"'{name}' must be an integer.")
+
+
 def validate_positive_integer(value: Any, name: str) -> None:
     """Check that a given number is a positive integer."""
     if not isinstance(value, int):

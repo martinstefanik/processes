@@ -15,6 +15,7 @@ from .utils import (
     validate_1d_array,
     validate_callable_args,
     validate_common_sampling_parameters,
+    validate_integer,
     validate_nonnegative_1d_array,
     validate_nonnegative_number,
     validate_number,
@@ -375,6 +376,21 @@ class ItoProcess(StochasticProcess):
 class MultidimensionalItoProcess(ItoProcess):
     """Multi-dimensional Ito process."""
 
+    def __init__(self, mu: Callable, sigma: Callable, d: int) -> None:
+        super().__init__(mu, sigma)
+        self.d = d
+
+    @property
+    def d(self) -> int:  # noqa: D102
+        return self._d
+
+    @d.setter
+    def d(self, value: int) -> None:
+        validate_integer(value, "d")
+        if not value >= 2:
+            raise ValueError("'d' must be greater or equal to 2.")
+        self._d = value
+
     def sample(
         self, T: float, n_time_grid: int, x0: float, n_paths: int = 1
     ) -> np.ndarray:
@@ -382,7 +398,7 @@ class MultidimensionalItoProcess(ItoProcess):
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
         if isinstance(x0, float):
-            x0 = np.array([x0] * len(self.mu))
+            x0 = np.array([x0] * self.d)
         else:
             validate_1d_array(x0, "x0")
             if len(x0) != len(self.mu):
@@ -488,7 +504,7 @@ class CompoundPoissonProcess(PoissonProcess):
             paths.append(path)
         paths = np.vstack(paths)
         if x0 != 0:
-            paths += x0
+            paths = paths + x0
 
         return paths
 
@@ -670,7 +686,7 @@ class BesselProcess(StochasticProcess):
         elif algorithm == "alfonsi":
             paths = self._alfonsi(T, n_time_grid, x0, n_paths)
         elif algorithm == "radial":
-            paths = self._exact(T, n_time_grid, x0, n_paths)
+            paths = self._radial(T, n_time_grid, x0, n_paths)
         else:
             raise ValueError(f"Unknown algorithm: {algorithm}")
 
@@ -820,7 +836,7 @@ class FractionalBrownianMotion(StochasticProcess):
         return paths
 
     @staticmethod
-    def _acf_fractional_gaussian_noise(hurst: float, n: float):
+    def _acf_fractional_gaussian_noise(hurst: float, n: float) -> np.ndarray:
         """Autocovariance function of fractional Gaussian noise."""
         rho = np.arange(n + 1) ** (2 * hurst)
         rho = 1 / 2 * (rho[2:] - 2 * rho[1:-1] + rho[:-2])

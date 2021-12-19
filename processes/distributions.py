@@ -15,7 +15,9 @@ class Distribution(ABC):
     """Abstract base class for a probability distributions."""
 
     @abstractmethod
-    def sample(self, size: Sequence[int]) -> Union[np.ndarray, float]:
+    def sample(
+        self, size: Union[Sequence[int], int]
+    ) -> Union[np.ndarray, float]:
         """Generate a sample from the probability distribution."""
         raise NotImplementedError("'sample' method not implemented.")
 
@@ -36,7 +38,9 @@ class NormalDistribution(Distribution):
         validate_positive_number(sigma, "sigma")
         self._sigma = sigma
 
-    def sample(self, size: Sequence[int] = 1) -> Union[np.ndarray, float]:
+    def sample(
+        self, size: Union[Sequence[int], int] = 1
+    ) -> Union[np.ndarray, float]:
         """Generate a sample from the normal distribution."""
         return np.random.normal(self.mu, self.sigma, size)
 
@@ -44,7 +48,9 @@ class NormalDistribution(Distribution):
 class LogNormalDistribution(NormalDistribution):
     """Log-normal distribution."""
 
-    def sample(self, size: Sequence[int] = 1) -> Union[np.ndarray, float]:
+    def sample(
+        self, size: Union[Sequence[int], int] = 1
+    ) -> Union[np.ndarray, float]:
         """Generate a sample from the log-normal distribution."""
         return np.random.lognormal(self.mu, self.sigma, size)
 
@@ -64,7 +70,9 @@ class ExponentialDistribution(Distribution):
         validate_positive_number(value, "mu")
         self._lam = value
 
-    def sample(self, size: Sequence[int] = 1) -> Union[np.ndarray, float]:
+    def sample(
+        self, size: Union[Sequence[int], int] = 1
+    ) -> Union[np.ndarray, float]:
         """Generate a sample from the exponential distribution."""
         return np.random.exponential(self.lam, size)
 
@@ -84,7 +92,9 @@ class ChisquaredDistribution(Distribution):
         validate_positive_number(value, "nu")
         self._nu = value
 
-    def sample(self, size: Sequence[int] = 1) -> Union[np.ndarray, float]:
+    def sample(
+        self, size: Union[Sequence[int], int] = 1
+    ) -> Union[np.ndarray, float]:
         """Generate a sample from the chi-squared distribution."""
         return np.random.chisquare(self.nu, size)
 
@@ -114,6 +124,8 @@ class GammaDistribution(Distribution):
         validate_positive_number(value, "scale")
         self._scale = value
 
-    def sample(self, size: Sequence[int] = 1) -> Union[np.ndarray, float]:
+    def sample(
+        self, size: Union[Sequence[int], int] = 1
+    ) -> Union[np.ndarray, float]:
         """Generate a sample from the gamma distribution."""
         return np.random.gamma(self.shape, self.scale, size)
