@@ -19,9 +19,9 @@ from .utils import (
     validate_nonnegative_1d_array,
     validate_nonnegative_number,
     validate_number,
-    validate_posdef_matrix,
     validate_positive_integer,
     validate_positive_number,
+    validate_possemdef_matrix,
 )
 
 
@@ -161,10 +161,14 @@ class MultidimensionalBrownianMotion(StochasticProcess):
 
     @sigma.setter
     def sigma(self, value: np.ndarray) -> None:
-        validate_posdef_matrix(value, "sigma")
+        validate_possemdef_matrix(value, "sigma")
         if hasattr(self, "_mu"):
             self._check_parameter_compatibility(self._mu, value)
         self._sigma = value
+
+    @property
+    def dim(self) -> int:  # noqa: D102
+        return len(self.mu)
 
     @staticmethod
     def _check_parameter_compatibility(
@@ -185,10 +189,10 @@ class MultidimensionalBrownianMotion(StochasticProcess):
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
         if isinstance(x0, float):
-            x0 = np.array([x0] * len(self.mu))
+            x0 = np.array([x0] * self.dim)
         else:
             validate_1d_array(x0, "x0")
-            if len(x0) != len(self.mu):
+            if len(x0) != self.dim:
                 raise ValueError(f"'x0' of unexpected length: {len(x0)}.")
 
         dt = T / n_time_grid
@@ -200,7 +204,7 @@ class MultidimensionalBrownianMotion(StochasticProcess):
         paths = np.cumsum(increments, axis=1)
         paths = np.insert(paths, 0, 0, axis=1)
         if not np.all(x0 == 0):
-            paths += np.reshape(x0, (1, 1, len(x0)))
+            paths += np.reshape(x0, (1, 1, self.dim))
         paths = np.squeeze(paths)
 
         return paths
@@ -376,20 +380,20 @@ class ItoProcess(StochasticProcess):
 class MultidimensionalItoProcess(ItoProcess):
     """Multi-dimensional Ito process."""
 
-    def __init__(self, mu: Callable, sigma: Callable, d: int) -> None:
+    def __init__(self, mu: Callable, sigma: Callable, dim: int) -> None:
         super().__init__(mu, sigma)
-        self.d = d
+        self.dim = dim
 
     @property
-    def d(self) -> int:  # noqa: D102
-        return self._d
+    def dim(self) -> int:  # noqa: D102
+        return self._dim
 
-    @d.setter
-    def d(self, value: int) -> None:
+    @dim.setter
+    def dim(self, value: int) -> None:
         validate_integer(value, "d")
         if not value >= 2:
             raise ValueError("'d' must be greater or equal to 2.")
-        self._d = value
+        self._dim = value
 
     def sample(
         self, T: float, n_time_grid: int, x0: float, n_paths: int = 1
@@ -398,33 +402,33 @@ class MultidimensionalItoProcess(ItoProcess):
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
         if isinstance(x0, float):
-            x0 = np.array([x0] * self.d)
+            x0 = np.array([x0] * self.dim)
         else:
             validate_1d_array(x0, "x0")
-            if len(x0) != len(self.mu):
+            if len(x0) != self.dim:
                 raise ValueError(f"'x0' of unexpected length: {len(x0)}.")
 
         # Run the Euler-Maruyama scheme
         dt = T / n_time_grid
-        paths = np.zeros(shape=(n_paths, n_time_grid, self.d))
-        paths[:, 0, :] = x0
-        dW_cov = dt * np.eye(self.d)
+        paths = np.zeros(shape=(n_paths, n_time_grid, self.dim))
+        paths[:, 0] = x0
+        dW_cov = dt * np.eye(self.dim)
 
         # TODO: Check whether this cannot be improved both in terms of speed as
         #       well as in terms of readability.
         for i in range(1, n_time_grid):
             t = (i - 1) * dt
             drift_coeffs = np.apply_along_axis(
-                lambda x: self.mu(x, t), axis=1, arr=paths[:, i - 1, :]
+                lambda x: self.mu(x, t), axis=1, arr=paths[:, i - 1]
             )  # t is the same for all paths in the current iteration
             diffusion_coeffs = np.apply_along_axis(
-                lambda x: self.sigma(x, t), axis=1, arr=paths[:, i - 1, :]
+                lambda x: self.sigma(x, t), axis=1, arr=paths[:, i - 1]
             )  # t is the same for all paths in the current iteration
             dW = np.random.multivariate_normal(
-                mean=np.zeros(self.d), cov=dW_cov, size=n_paths
+                mean=np.zeros(self.dim), cov=dW_cov, size=n_paths
             )
-            paths[:, i, :] = (
-                paths[:, i - 1, :]
+            paths[:, i] = (
+                paths[:, i - 1]
                 + drift_coeffs * dt
                 + matrix_multiply(
                     diffusion_coeffs, np.expand_dims(dW, 2)
