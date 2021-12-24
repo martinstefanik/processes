@@ -22,6 +22,7 @@ from .utils import (
     validate_positive_integer,
     validate_positive_number,
     validate_possemdef_matrix,
+    validate_square_matrix,
 )
 
 
@@ -964,3 +965,100 @@ class BrownianBridge(StochasticProcess):
         )
         paths = np.squeeze(paths)
         return paths
+
+
+class WishartProcess(StochasticProcess):
+    """Wishart process."""
+
+    def __init__(self, Q: np.ndarray, K: np.ndarray, alpha: float) -> None:
+        self.Q = Q
+        self.K = K
+        self.alpha = alpha
+
+    @property
+    def Q(self) -> np.ndarray:  # noqa: D102
+        return self._Q
+
+    @Q.setter
+    def Q(self, value: np.ndarray) -> None:
+        validate_square_matrix(value, "Q")
+        if hasattr(self, "_K"):
+            self._check_parameter_compatibility(value, self._K)
+        self._Q = value
+
+    @property
+    def K(self) -> np.ndarray:  # noqa: D102
+        return self._K
+
+    @K.setter
+    def K(self, value: np.ndarray) -> None:
+        validate_square_matrix(value, "K")
+        if hasattr(self, "_Q"):
+            self._check_parameter_compatibility(self._Q, value)
+        self._K = value
+
+    @property
+    def alpha(self) -> float:  # noqa: D102
+        return self._alpha
+
+    @alpha.setter
+    def alpha(self, value: float) -> None:
+        validate_nonnegative_number(value, "alpha")
+        self._alpha = value
+
+    @property
+    def dim(self) -> int:  # noqa: D102
+        return self.Q.shape[0]
+
+    @staticmethod
+    def _check_parameter_compatibility(Q: np.ndarray, K: np.ndarray) -> None:
+        """Check if the parameters Q and K are compatible."""
+        if Q.shape[0] != K.shape[0]:
+            raise ValueError("Incompatible dimension of 'Q' and 'K'.")
+
+    def sample(
+        self, T: float, n_time_grid: int, x0: np.ndarray, n_paths: int = 1
+    ) -> np.ndarray:
+        """Generate sample paths of the Wishart process."""
+        # Sanity check for input parameters
+        validate_common_sampling_parameters(T, n_time_grid, n_paths)
+        validate_possemdef_matrix(x0, "x0")
+
+        dt = T / n_time_grid
+        dW_scale = np.sqrt(dt)
+        dim = self.dim
+        Q_transposed = self.Q.T
+        rho = self.alpha * np.matmul(Q_transposed, self.Q)
+
+        paths = np.zeros(shape=(n_paths, n_time_grid, dim, dim))
+        paths[:, 0] = x0
+        eigenvalues, eigenvectors = np.linalg.eigh(x0)
+        for i in range(n_paths):
+            for j in range(1, n_time_grid):
+                dW = np.random.normal(scale=dW_scale, size=(dim, dim))
+                sqrt_X_t = (
+                    eigenvectors
+                    @ np.diag(np.sqrt(eigenvalues))
+                    @ eigenvectors.T
+                )
+                drift = paths[i, j - 1] @ self.K
+                vol = sqrt_X_t @ dW @ self.Q
+                next_value = (
+                    paths[i, j - 1] + vol + vol.T + (drift + drift.T + rho) * dt
+                )
+                paths[i, j] = self._project_onto_PSD_cone(next_value)
+        paths = np.squeeze(paths)
+
+        return paths
+
+    @staticmethod
+    def _project_onto_PSD_cone(matrix: np.ndarray) -> np.ndarray:
+        """
+        Project a symmetric matrix onto the code of symmetric positive
+        semidefinite matrices using the Frobenius norm.
+        """
+        eigenvalues, eigenvectors = np.linalg.eigh(matrix)
+        val = np.maximum(eigenvalues, 0)
+        if np.any(val == 0):
+            matrix = eigenvectors @ np.diag(val) @ eigenvectors.T
+        return matrix
