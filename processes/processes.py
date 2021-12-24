@@ -356,7 +356,7 @@ class ItoProcess(StochasticProcess):
         dt = T / n_time_grid
         paths = np.zeros(shape=(n_paths, n_time_grid))
         paths[:, 0] = x0
-        noise_scale = np.sqrt(dt)
+        dW_scale = np.sqrt(dt)
         for i in range(1, n_time_grid):
             t = (i - 1) * dt
             drift_coeffs = np.array(
@@ -365,9 +365,9 @@ class ItoProcess(StochasticProcess):
             diffusion_coeffs = np.array(
                 list(map(lambda x: self.sigma(x, t), paths[:, i - 1]))
             )  # t is the same for all paths in the current iteration
-            noise = np.random.normal(loc=0, scale=noise_scale, size=n_paths)
+            dW = np.random.normal(loc=0, scale=dW_scale, size=n_paths)
             paths[:, i] = (
-                paths[:, i - 1] + drift_coeffs * dt + diffusion_coeffs * noise
+                paths[:, i - 1] + drift_coeffs * dt + diffusion_coeffs * dW
             )
         paths = np.squeeze(paths)
         return paths
@@ -408,7 +408,7 @@ class MultidimensionalItoProcess(ItoProcess):
         dt = T / n_time_grid
         paths = np.zeros(shape=(n_paths, n_time_grid, self.d))
         paths[:, 0, :] = x0
-        noise_cov = dt * np.eye(self.d)
+        dW_cov = dt * np.eye(self.d)
 
         # TODO: Check whether this cannot be improved both in terms of speed as
         #       well as in terms of readability.
@@ -420,14 +420,14 @@ class MultidimensionalItoProcess(ItoProcess):
             diffusion_coeffs = np.apply_along_axis(
                 lambda x: self.sigma(x, t), axis=1, arr=paths[:, i - 1, :]
             )  # t is the same for all paths in the current iteration
-            noise = np.random.multivariate_normal(
-                mean=np.zeros(self.d), cov=noise_cov, size=n_paths
+            dW = np.random.multivariate_normal(
+                mean=np.zeros(self.d), cov=dW_cov, size=n_paths
             )
             paths[:, i, :] = (
                 paths[:, i - 1, :]
                 + drift_coeffs * dt
                 + matrix_multiply(
-                    diffusion_coeffs, np.expand_dims(noise, 2)
+                    diffusion_coeffs, np.expand_dims(dW, 2)
                 ).squeeze()
             )
         paths = np.squeeze(paths)
@@ -474,21 +474,19 @@ class PoissonProcess(StochasticProcess):
 class CompoundPoissonProcess(PoissonProcess):
     """Compound Poisson process."""
 
-    def __init__(
-        self, intensity: float, increment_dist: Type[Distribution]
-    ) -> None:
+    def __init__(self, intensity: float, jump_dist: Type[Distribution]) -> None:
         self.intensity = intensity
-        self.increment_dist = increment_dist
+        self.jump_dist = jump_dist
 
     @property
-    def increment_dist(self) -> Type[Distribution]:  # noqa: D102
-        return self._increment_dist
+    def jump_dist(self) -> Type[Distribution]:  # noqa: D102
+        return self._jump_dist
 
-    @increment_dist.setter
-    def increment_dist(self, value: Type[Distribution]) -> None:
+    @jump_dist.setter
+    def jump_dist(self, value: Type[Distribution]) -> None:
         if not isinstance(value, Distribution):
             raise ValueError("'increment_dist' must be of type Distribution.")
-        self._increment_dist = value
+        self._jump_dist = value
 
     def sample(
         self, T: float, n_time_grid: int, x0: float = 0, n_paths: int = 1
@@ -498,8 +496,8 @@ class CompoundPoissonProcess(PoissonProcess):
         paths = []
         for i in range(n_paths):
             terminal = pp_paths[i, -1]
-            increments = self.increment_dist.sample(size=terminal)
-            path = np.cumsum(increments)
+            jumps = self.jump_dist.sample(size=terminal)
+            path = np.cumsum(jumps)
             path = np.insert(path, 0, 0)[pp_paths[i]]
             paths.append(path)
         paths = np.vstack(paths)
@@ -605,7 +603,7 @@ class CoxIngersollRossProcess(StochasticProcess):
         (2005).
         """
         dt = T / n_time_grid
-        noise_scale = np.sqrt(dt)
+        dW_scale = np.sqrt(dt)
         xi = 1 + self.theta / 2 * dt
         two_xi = 2 * xi
         eight_xi = 8 * xi
@@ -615,8 +613,8 @@ class CoxIngersollRossProcess(StochasticProcess):
         paths = np.zeros(shape=(n_paths, n_time_grid))
         paths[:, 0] = x0
         for i in range(1, n_time_grid):
-            noise = np.random.normal(scale=noise_scale, size=n_paths)
-            z = np.sqrt(paths[:, i - 1]) + self.sigma / 2 * noise
+            dW = np.random.normal(scale=dW_scale, size=n_paths)
+            z = np.sqrt(paths[:, i - 1]) + self.sigma / 2 * dW
             paths[:, i] = (
                 z / two_xi
                 + np.sqrt(z ** 2 / four_xi_squared + rho / eight_xi * dt)
@@ -634,17 +632,17 @@ class CoxIngersollRossProcess(StochasticProcess):
         CEV-like SDEs.
         """
         dt = T / n_time_grid
-        noise_scale = np.sqrt(dt)
+        dW_scale = np.sqrt(dt)
 
         paths = np.zeros(shape=(n_paths, n_time_grid))
         paths[:, 0] = x0
         for i in range(1, n_time_grid):
-            noise = np.random.normal(scale=noise_scale, size=n_paths)
+            dW = np.random.normal(scale=dW_scale, size=n_paths)
             paths[:, i] = np.abs(
                 paths[:, i - 1]
                 + self.theta * (self.mu - paths[:, i - 1]) * dt
-                + self.sigma * np.sqrt(np.abs(paths[:, i - 1])) * noise
-                + self.sigma ** 2 / 4 * (noise ** 2 - dt)
+                + self.sigma * np.sqrt(np.abs(paths[:, i - 1])) * dW
+                + self.sigma ** 2 / 4 * (dW ** 2 - dt)
             )
         paths = np.squeeze(paths)
 
@@ -714,14 +712,14 @@ class BesselProcess(StochasticProcess):
         """
         # Sample paths of the squared Bessel process for numerical stability
         dt = T / n_time_grid
-        noise_scale = np.sqrt(dt)
+        dW_scale = np.sqrt(dt)
         rho = (self.n - 2) * dt
 
         paths = np.zeros(shape=(n_paths, n_time_grid))
         paths[:, 0] = x0 ** 2
         for i in range(1, n_time_grid):
-            noise = np.random.normal(scale=noise_scale, size=n_paths)
-            paths[:, i] = (noise + np.sqrt(noise + paths[:, i - 1] + rho)) ** 2
+            dW = np.random.normal(scale=dW_scale, size=n_paths)
+            paths[:, i] = (dW + np.sqrt(dW + paths[:, i - 1] + rho)) ** 2
         paths = np.squeeze(np.sqrt(paths))
 
         return paths
@@ -756,19 +754,19 @@ class BesselProcess(StochasticProcess):
         CEV-like SDEs.
         """
         dt = T / n_time_grid
-        noise_scale = np.sqrt(dt)
+        dW_scale = np.sqrt(dt)
         n_dt = self.n * dt
 
         # Sample paths of the squared Bessel process for numerical stability
         paths = np.zeros(shape=(n_paths, n_time_grid))
         paths[:, 0] = x0
         for i in range(1, n_time_grid):
-            noise = np.random.normal(scale=noise_scale, size=n_paths)
+            dW = np.random.normal(scale=dW_scale, size=n_paths)
             paths[:, i] = np.abs(
                 paths[:, i - 1]
                 + n_dt
-                + 2 * np.sqrt(np.abs(paths[:, i - 1])) * noise
-                + (noise ** 2 - dt)
+                + 2 * np.sqrt(np.abs(paths[:, i - 1])) * dW
+                + (dW ** 2 - dt)
             )
         paths = np.squeeze(paths)
 
@@ -829,8 +827,8 @@ class FractionalBrownianMotion(StochasticProcess):
         z = np.random.normal(scale=scale, size=2 * size).view(complex)
         z[0] = z[0].real * 2 ** (1 / 2)
         z[-1] = z[-1].real * 2 ** (1 / 2)
-        increments = np.fft.irfft(sqrt_eigenvalues * z)[:n_time_grid]
-        paths = np.cumsum(increments)
+        fBm_increments = np.fft.irfft(sqrt_eigenvalues * z)[:n_time_grid]
+        paths = np.cumsum(fBm_increments)
         paths = np.squeeze(paths)
 
         return paths
