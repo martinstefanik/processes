@@ -649,8 +649,8 @@ class CoxIngersollRossProcess(StochasticProcess):
         return paths
 
 
-class BesselProcess(StochasticProcess):
-    """Bessel process."""
+class SquaredBesselProcess(StochasticProcess):
+    """Squared Bessel process."""
 
     def __init__(self, n: float) -> None:
         self.n = n
@@ -672,7 +672,7 @@ class BesselProcess(StochasticProcess):
         n_paths: int = 1,
         algorithm: str = "alfonsi",
     ) -> np.ndarray:
-        """Generate sample paths of the Bessel process."""
+        """Generate sample paths of the squared Bessel process."""
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
         validate_nonnegative_number(x0, "x0")
@@ -693,34 +693,31 @@ class BesselProcess(StochasticProcess):
     def _euler_maruyama(
         self, T: float, n_time_grid: int, x0: float, n_paths: int
     ) -> np.ndarray:
-        """Euler-Maruyama scheme for the Cox-Ingersoll-Ross process."""
-        # Sample paths of the squared Bessel process for numerical stability
+        """Euler-Maruyama scheme for the squared Bessel process."""
         squared_bessel = ItoProcess(
             lambda x, t: self.n,
             lambda x, t: 2 * np.sqrt(np.abs(x)),
         )
-        paths = squared_bessel.sample(T, n_time_grid, x0 ** 2, n_paths)
-        paths = np.sqrt(paths)
+        paths = squared_bessel.sample(T, n_time_grid, x0, n_paths)
         return paths
 
     def _alfonsi(
         self, T: float, n_time_grid: int, x0: float, n_paths: int
     ) -> np.ndarray:
         """
-        Alfonsi scheme for the Bessel process. See On the discretization schemes
-        for the CIR (and Bessel squared) processes (2005).
+        Alfonsi scheme for the squared Bessel process. See On the discretization
+        schemes for the CIR (and Bessel squared) processes (2005).
         """
-        # Sample paths of the squared Bessel process for numerical stability
         dt = T / n_time_grid
         dW_scale = np.sqrt(dt)
         rho = (self.n - 2) * dt
 
         paths = np.zeros(shape=(n_paths, n_time_grid))
-        paths[:, 0] = x0 ** 2
+        paths[:, 0] = x0
         for i in range(1, n_time_grid):
             dW = np.random.normal(scale=dW_scale, size=n_paths)
             paths[:, i] = (dW + np.sqrt(dW + paths[:, i - 1] + rho)) ** 2
-        paths = np.squeeze(np.sqrt(paths))
+        paths = np.squeeze(paths)
 
         return paths
 
@@ -741,7 +738,7 @@ class BesselProcess(StochasticProcess):
         bm_x0 = np.zeros(self.n)
         bm_x0[0] = x0
         paths = bm.sample(T, n_time_grid, bm_x0, n_paths)
-        paths = np.linalg.norm(paths, ord=2, axis=-1)
+        paths = np.linalg.norm(paths, ord=2, axis=-1) ** 2
 
         return paths
 
@@ -773,6 +770,23 @@ class BesselProcess(StochasticProcess):
         return paths
 
 
+class BesselProcess(SquaredBesselProcess):
+    """Bessel process."""
+
+    def sample(
+        self,
+        T: float,
+        n_time_grid: int,
+        x0: float = 0,
+        n_paths: int = 1,
+        algorithm: str = "alfonsi",
+    ) -> np.ndarray:
+        """Generate sample paths of the Bessel process."""
+        validate_nonnegative_number(x0, "x0")
+        paths = super().sample(T, n_time_grid, x0 ** 2, n_paths, algorithm)
+        return np.sqrt(paths)
+
+
 class InverseBesselProcess(BesselProcess):
     """Inverse Bessel process."""
 
@@ -785,9 +799,9 @@ class InverseBesselProcess(BesselProcess):
         algorithm: str = "alfonsi",
     ) -> np.ndarray:
         """Generate sample paths of the inverse Bessel process."""
-        paths = super().sample(T, n_time_grid, x0, n_paths, algorithm)
-        paths = 1 / paths
-        return paths
+        validate_positive_number(x0, "x0")
+        paths = super().sample(T, n_time_grid, 1 / x0, n_paths, algorithm)
+        return 1 / paths
 
 
 class FractionalBrownianMotion(StochasticProcess):
