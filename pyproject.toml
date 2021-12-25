@@ -41,6 +41,7 @@ matplotlib = "^3.1"
 pytest = "^6.2"
 pytest-cov = "^3.0"
 pre-commit = "^2.16"
+pytest-xdist = "^2.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
