@@ -4,7 +4,7 @@
 
 from abc import ABC, abstractmethod
 from math import ceil
-from typing import Callable, Type, Union
+from typing import Callable, Literal, Optional, Type, Union
 
 import numpy as np
 from numpy.core.umath_tests import matrix_multiply
@@ -100,7 +100,7 @@ class BrownianMotion(StochasticProcess):
         validate_nonnegative_1d_array(times, "times")
         validate_number(x0, "x0")
 
-        if times[0] != 0:  # we need an increment from 0 in any case
+        if times[0] != 0:
             times = np.insert(times, 0, 0)
         dt = get_time_increments(times)
         increments = np.random.normal(
@@ -111,6 +111,8 @@ class BrownianMotion(StochasticProcess):
         paths = np.cumsum(increments, axis=1)
         if x0 != 0:
             paths += x0
+        else:
+            paths = np.insert(paths, 0, 0, axis=1)
         paths = np.squeeze(paths)
 
         return paths
@@ -231,7 +233,7 @@ class TimeChangedBrownianMotion(StochasticProcess):
     ) -> np.ndarray:
         """Generate sample paths of the time-changed Brownian motion."""
         # Sanity check for input parameters
-        validate_common_sampling_parameters()
+        validate_common_sampling_parameters(T, n_time_grid, n_paths)
         validate_number(x0, "x0")
 
         times = self.time_change(np.linspace(0, T, num=n_time_grid))
@@ -282,7 +284,7 @@ class OrnsteinUhlenbeckProcess(StochasticProcess):
     ) -> np.ndarray:
         """Generate sample paths of the Ornstein-Uhlenbeck process."""
         # Sanity check for input parameters
-        validate_common_sampling_parameters()
+        validate_common_sampling_parameters(T, n_time_grid, n_paths)
         validate_number(x0, "x0")
 
         # Generate the random part of the process
@@ -497,7 +499,12 @@ class CompoundPoissonProcess(PoissonProcess):
         self, T: float, n_time_grid: int, x0: float = 0, n_paths: int = 1
     ) -> np.ndarray:
         """Generate sample paths of the compound Poisson process."""
+        validate_common_sampling_parameters(T, n_time_grid, n_paths)
+        validate_number(x0, "x0")
+
         pp_paths = super().sample(T, n_time_grid, 0, n_paths)
+        if n_paths == 1:
+            pp_paths = np.expand_dims(pp_paths, axis=0)
         paths = []
         for i in range(n_paths):
             terminal = pp_paths[i, -1]
@@ -509,7 +516,7 @@ class CompoundPoissonProcess(PoissonProcess):
         if x0 != 0:
             paths = paths + x0
 
-        return paths
+        return np.squeeze(paths)
 
 
 class CoxIngersollRossProcess(StochasticProcess):
@@ -556,7 +563,7 @@ class CoxIngersollRossProcess(StochasticProcess):
     @staticmethod
     def _check_feller_condition(theta: float, mu: float, sigma: float) -> None:
         """Check that the Feller condition holds."""
-        if not 2 * theta * mu >= sigma ** 2:
+        if not 2 * theta * mu > sigma ** 2:
             raise ValueError(
                 "The Feller condition for the parameters "
                 "'theta', 'mu' and 'sigma' does not hold."
@@ -568,7 +575,9 @@ class CoxIngersollRossProcess(StochasticProcess):
         n_time_grid: int,
         x0: float,
         n_paths: int = 1,
-        algorithm: str = "alfonsi",
+        algorithm: Optional[
+            Literal["alfonsi", "euler-maruyama", "milstein-sym"]
+        ] = "alfonsi",
     ) -> np.ndarray:
         """Generate sample paths of the Cox-Ingersoll-Ross process."""
         # Sanity check for input parameters
@@ -675,18 +684,29 @@ class SquaredBesselProcess(StochasticProcess):
         n_time_grid: int,
         x0: float = 0,
         n_paths: int = 1,
-        algorithm: str = "alfonsi",
+        algorithm: Optional[
+            Literal["alfonsi", "euler-maruyama", "milstein-sym", "radial"]
+        ] = None,
     ) -> np.ndarray:
         """Generate sample paths of the squared Bessel process."""
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
         validate_nonnegative_number(x0, "x0")
-        if not isinstance(algorithm, str):
+        if not isinstance(algorithm, (str, type(None))):
             raise ValueError("'algorithm' must be of type str.")
 
-        if algorithm == "euler-maruyama":
+        if algorithm is None:
+            if self.n >= 2:
+                paths = self._alfonsi(T, n_time_grid, x0, n_paths)
+            else:
+                paths = self._milstein_sym(T, n_time_grid, x0, n_paths)
+        elif algorithm == "euler-maruyama":
             paths = self._euler_maruyama(T, n_time_grid, x0, n_paths)
+        elif algorithm == "milstein-sym":
+            paths = self._milstein_sym(T, n_time_grid, x0, n_paths)
         elif algorithm == "alfonsi":
+            if self.n < 2:
+                raise ValueError("'alfonsi' not applicable for n < 2.")
             paths = self._alfonsi(T, n_time_grid, x0, n_paths)
         elif algorithm == "radial":
             paths = self._radial(T, n_time_grid, x0, n_paths)
@@ -721,7 +741,7 @@ class SquaredBesselProcess(StochasticProcess):
         paths[:, 0] = x0
         for i in range(1, n_time_grid):
             dW = np.random.normal(scale=dW_scale, size=n_paths)
-            paths[:, i] = (dW + np.sqrt(dW + paths[:, i - 1] + rho)) ** 2
+            paths[:, i] = (dW + np.sqrt(dW ** 2 + paths[:, i - 1] + rho)) ** 2
         paths = np.squeeze(paths)
 
         return paths
@@ -730,8 +750,8 @@ class SquaredBesselProcess(StochasticProcess):
         self, T: float, n_time_grid: int, x0: float, n_paths: int
     ) -> np.ndarray:
         """
-        Exact sampling based on the representation of a Bessel process as the
-        radial part of n-dimensional Brownian motion.
+        Exact sampling based on the representation of a squared Bessel process
+        as the squared L2 norm of standard n-dimensional Brownian motion.
         """
         if not isinstance(self.n, int):
             raise ValueError(
@@ -751,7 +771,7 @@ class SquaredBesselProcess(StochasticProcess):
         self, T: float, n_time_grid: int, x0: float, n_paths: int
     ) -> np.ndarray:
         """
-        Symmetrized Milstein scheme for the Bessel process from the
+        Symmetrized Milstein scheme for the squared Bessel process from the
         paper Strong convergence of the symmetrized Milstein scheme for some
         CEV-like SDEs.
         """
@@ -784,7 +804,9 @@ class BesselProcess(SquaredBesselProcess):
         n_time_grid: int,
         x0: float = 0,
         n_paths: int = 1,
-        algorithm: str = "alfonsi",
+        algorithm: Optional[
+            Literal["alfonsi", "euler-maruyama", "milstein-sym", "radial"]
+        ] = None,
     ) -> np.ndarray:
         """Generate sample paths of the Bessel process."""
         validate_nonnegative_number(x0, "x0")
@@ -801,7 +823,9 @@ class InverseBesselProcess(BesselProcess):
         n_time_grid: int,
         x0: float,
         n_paths: int = 1,
-        algorithm: str = "alfonsi",
+        algorithm: Optional[
+            Literal["alfonsi", "euler-maruyama", "milstein-sym", "radial"]
+        ] = None,
     ) -> np.ndarray:
         """Generate sample paths of the inverse Bessel process."""
         validate_positive_number(x0, "x0")
