@@ -6,7 +6,6 @@ clean:
 
 test:
 	poetry run pytest tests \
-		--exitfirst \
 		--numprocesses auto \
 		--cov=processes \
 		--cov-report=html

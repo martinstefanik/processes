@@ -237,7 +237,7 @@ class TimeChangedBrownianMotion(StochasticProcess):
         validate_number(x0, "x0")
 
         times = self.time_change(np.linspace(0, T, num=n_time_grid))
-        paths = BrownianMotion()._sample_at(times, 0, n_paths)
+        paths = BrownianMotion()._sample_at(times=times, x0=0, n_paths=n_paths)
         if x0 != 0:
             paths += x0
 
@@ -575,8 +575,8 @@ class CoxIngersollRossProcess(StochasticProcess):
         n_time_grid: int,
         x0: float,
         n_paths: int = 1,
-        algorithm: Optional[
-            Literal["alfonsi", "euler-maruyama", "milstein-sym"]
+        algorithm: Literal[
+            "alfonsi", "euler-maruyama", "milstein-sym"
         ] = "alfonsi",
     ) -> np.ndarray:
         """Generate sample paths of the Cox-Ingersoll-Ross process."""
@@ -969,24 +969,35 @@ class BrownianBridge(StochasticProcess):
         self._T = value
 
     def sample(
-        self, n_time_grid: int, n_paths: int = 1, **kwargs
+        self,
+        T: float,
+        n_time_grid: int,
+        x0: Optional[float] = None,
+        n_paths: int = 1,
     ) -> np.ndarray:
         """Generate sample paths of the Brownian bridge."""
         # Sanity check for input parameters
-        validate_positive_integer(n_time_grid, "n_time_grid")
-        validate_positive_integer(n_paths, "n_paths")
+        validate_common_sampling_parameters(T, n_time_grid, n_paths)
+        a = x0 if x0 is not None else self.a
 
         time = self.time_grid(self.T, n_time_grid)
-        bm_paths = BrownianMotion().sample(self.T, n_time_grid, 0, n_paths)
-        if n_paths > 1:  # unify the dimensionality regardless of n_paths
+        time_bm = time[time <= T]
+        bm_paths = BrownianMotion()._sample_at(
+            times=time_bm, x0=0, n_paths=n_paths
+        )
+        if n_paths == 1:  # unify the dimensionality regardless of n_paths
             bm_paths = np.expand_dims(bm_paths, axis=0)
         paths = (
-            self.a
+            a
             + bm_paths
-            + time
-            * (self.b - self.a - np.reshape(bm_paths[:, -1], (-1, 1)))
-            / time[-1]
+            + time_bm
+            * (self.b - a - np.reshape(bm_paths[:, -1], (-1, 1)))
+            / time_bm[-1]
         )
+        n_constant_part = len(time) - len(time_bm)
+        if n_constant_part > 0:
+            constant_part = self.b * np.ones((n_paths, n_constant_part))
+            paths = np.concatenate((paths, constant_part), axis=1)
         paths = np.squeeze(paths)
         return paths
 
