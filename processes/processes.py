@@ -1067,33 +1067,29 @@ class WishartProcess(StochasticProcess):
 
         paths = np.zeros(shape=(n_paths, n_time_grid, dim, dim))
         paths[:, 0] = x0
-        eigenvalues, eigenvectors = np.linalg.eigh(x0)
+        eigval, eigvec = np.linalg.eigh(x0)
         for i in range(n_paths):
             for j in range(1, n_time_grid):
                 dW = np.random.normal(scale=dW_scale, size=(dim, dim))
-                sqrt_X_t = (
-                    eigenvectors
-                    @ np.diag(np.sqrt(eigenvalues))
-                    @ eigenvectors.T
-                )
+                sqrt_X_t_m_1 = eigvec @ np.diag(np.sqrt(eigval)) @ eigvec.T
                 drift = paths[i, j - 1] @ self.K
-                vol = sqrt_X_t @ dW @ self.Q
-                next_value = (
+                vol = sqrt_X_t_m_1 @ dW @ self.Q
+                X_t = (
                     paths[i, j - 1] + vol + vol.T + (drift + drift.T + rho) * dt
                 )
-                paths[i, j] = self._project_onto_PSD_cone(next_value)
+                paths[i, j], eigval, eigvec = self._project_onto_PSD_cone(X_t)
         paths = np.squeeze(paths)
 
         return paths
 
     @staticmethod
-    def _project_onto_PSD_cone(matrix: np.ndarray) -> np.ndarray:
+    def _project_onto_PSD_cone(matrix: np.ndarray) -> tuple[np.ndarray]:
         """
         Project a symmetric matrix onto the code of symmetric positive
         semidefinite matrices using the Frobenius norm.
         """
-        eigenvalues, eigenvectors = np.linalg.eigh(matrix)
-        val = np.maximum(eigenvalues, 0)
-        if np.any(val == 0):
-            matrix = eigenvectors @ np.diag(val) @ eigenvectors.T
-        return matrix
+        eigval, eigvec = np.linalg.eigh(matrix)
+        eigval = np.maximum(eigval, 0)
+        if np.any(eigval == 0):
+            matrix = eigvec @ np.diag(eigval) @ eigvec.T
+        return matrix, eigval, eigvec
