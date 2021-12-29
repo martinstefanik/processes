@@ -1,6 +1,4 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""Continuous time stochastic processes."""
+"""Classes for stochastic processes."""
 
 from abc import ABC, abstractmethod
 from math import ceil
@@ -9,8 +7,8 @@ from typing import Callable, Literal, Optional, Type, Union
 import numpy as np
 from numpy.core.umath_tests import matrix_multiply
 
-from .distributions import Distribution
-from .utils import (
+from processes.distributions import Distribution
+from processes.utils import (
     get_time_increments,
     validate_1d_array,
     validate_callable_args,
@@ -393,9 +391,9 @@ class MultidimensionalItoProcess(ItoProcess):
 
     @dim.setter
     def dim(self, value: int) -> None:
-        validate_integer(value, "d")
+        validate_integer(value, "dim")
         if not value >= 2:
-            raise ValueError("'d' must be greater or equal to 2.")
+            raise ValueError("'dim' must be greater or equal to 2.")
         self._dim = value
 
     def sample(

@@ -56,11 +56,11 @@ def validate_square_matrix(value: Any, name: str) -> None:
         raise ValueError(f"'{name}' must be square. Shape: {value.shape}")
 
 
-def validate_posdef_matrix(value: Any, name: str) -> None:
-    """Check that a given matrix is positive definite."""
+def validate_possemdef_matrix(value: Any, name: str) -> None:
+    """Check that a given matrix is positive semi-definite definite."""
     validate_square_matrix(value, name)
-    if not np.all(np.linalg.eigvals(value) > 0):
-        raise ValueError(f"'{name}' must be positive definite.")
+    if not np.all(np.linalg.eigvals(value) >= 0):
+        raise ValueError(f"'{name}' must be positive semi-definite.")
 
 
 def validate_callable_args(value: Any, n_args: int, name: str) -> None:
