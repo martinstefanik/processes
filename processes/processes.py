@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from math import ceil
-from typing import Callable, Literal, Optional, Type, Union
+from typing import Callable, Literal, Optional, Union
 
 import numpy as np
 from numpy.core.umath_tests import matrix_multiply
@@ -310,6 +310,15 @@ class OrnsteinUhlenbeckProcess(StochasticProcess):
         return paths
 
 
+class VasicekProcess(OrnsteinUhlenbeckProcess):
+    """
+    Vasicek process. This is just an alternative name for the Ornstein-Uhlenbeck
+    process and their implementations are the same.
+    """
+
+    pass
+
+
 class ItoProcess(StochasticProcess):
     """Ito process."""
 
@@ -479,16 +488,16 @@ class PoissonProcess(StochasticProcess):
 class CompoundPoissonProcess(PoissonProcess):
     """Compound Poisson process."""
 
-    def __init__(self, intensity: float, jump_dist: Type[Distribution]) -> None:
+    def __init__(self, intensity: float, jump_dist: type[Distribution]) -> None:
         self.intensity = intensity
         self.jump_dist = jump_dist
 
     @property
-    def jump_dist(self) -> Type[Distribution]:  # noqa: D102
+    def jump_dist(self) -> type[Distribution]:  # noqa: D102
         return self._jump_dist
 
     @jump_dist.setter
-    def jump_dist(self, value: Type[Distribution]) -> None:
+    def jump_dist(self, value: type[Distribution]) -> None:
         if not isinstance(value, Distribution):
             raise ValueError("'increment_dist' must be of type Distribution.")
         self._jump_dist = value
@@ -574,8 +583,8 @@ class CoxIngersollRossProcess(StochasticProcess):
         x0: float,
         n_paths: int = 1,
         algorithm: Literal[
-            "alfonsi", "euler-maruyama", "milstein-sym"
-        ] = "alfonsi",
+            "alfonsi", "euler-maruyama", "milstein-sym", "conditional"
+        ] = "conditional",
     ) -> np.ndarray:
         """Generate sample paths of the Cox-Ingersoll-Ross process."""
         # Sanity check for input parameters
@@ -590,6 +599,8 @@ class CoxIngersollRossProcess(StochasticProcess):
             paths = self._euler_maruyama(T, n_time_grid, x0, n_paths)
         elif algorithm == "milstein-sym":
             paths = self._milstein_sym(T, n_time_grid, x0, n_paths)
+        elif algorithm == "conditional":
+            paths = self._conditional(T, n_time_grid, x0, n_paths)
         else:
             raise ValueError(f"Unknown algorithm: {algorithm}")
 
@@ -659,6 +670,34 @@ class CoxIngersollRossProcess(StochasticProcess):
         paths = np.squeeze(paths)
 
         return paths
+
+    def _conditional(
+        self, T: float, n_time_grid: int, x0: float, n_paths: int
+    ) -> np.ndarray:
+        """
+        Exact sampling scheme based on the knowledge of the transition density
+        of the process.
+        """
+        dt = T / n_time_grid
+        d = 4 * self.mu * self.theta / self.sigma ** 2
+        c = self.sigma ** 2 * (1 - np.exp(-self.theta * dt)) / (4 * self.theta)
+
+        paths = np.zeros(shape=(n_paths, n_time_grid))
+        paths[:, 0] = x0
+        if d > 1:
+            for i in range(1, n_time_grid):
+                lam = paths[:, i - 1] * np.exp(-self.theta * dt) / c
+                Z = np.random.normal(size=n_paths)
+                X = np.random.chisquare(df=d - 1, size=n_paths)
+                paths[:, i] = c * ((Z + np.sqrt(lam)) ** 2 + X)
+        else:
+            for i in range(1, n_time_grid):
+                lam = paths[:, i - 1] * np.exp(-self.theta * dt) / c
+                N = np.random.poisson(lam / 2, size=n_paths)
+                X = np.random.chisquare(df=d + 2 * N, size=n_paths)
+                paths[:, i] = c * X
+
+        return np.squeeze(paths)
 
 
 class SquaredBesselProcess(StochasticProcess):
@@ -1065,29 +1104,37 @@ class WishartProcess(StochasticProcess):
 
         paths = np.zeros(shape=(n_paths, n_time_grid, dim, dim))
         paths[:, 0] = x0
-        eigval, eigvec = np.linalg.eigh(x0)
+        eigval, right_eigvec = np.linalg.eigh(x0)
         for i in range(n_paths):
             for j in range(1, n_time_grid):
                 dW = np.random.normal(scale=dW_scale, size=(dim, dim))
-                sqrt_X_t_m_1 = eigvec @ np.diag(np.sqrt(eigval)) @ eigvec.T
+                sqrt_X_t_m_1 = (
+                    right_eigvec @ np.diag(np.sqrt(eigval)) @ right_eigvec.T
+                )
                 drift = paths[i, j - 1] @ self.K
                 vol = sqrt_X_t_m_1 @ dW @ self.Q
                 X_t = (
                     paths[i, j - 1] + vol + vol.T + (drift + drift.T + rho) * dt
                 )
-                paths[i, j], eigval, eigvec = self._project_onto_PSD_cone(X_t)
+                paths[i, j], eigval, right_eigvec = self._project_onto_PSD_cone(
+                    X_t
+                )
         paths = np.squeeze(paths)
 
         return paths
 
     @staticmethod
-    def _project_onto_PSD_cone(matrix: np.ndarray) -> tuple[np.ndarray]:
+    def _project_onto_PSD_cone(
+        matrix: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Project a symmetric matrix onto the code of symmetric positive
-        semidefinite matrices using the Frobenius norm.
+        Project a *symmetric* matrix onto the code of symmetric positive
+        semidefinite matrices using the Frobenius norm. This is used in order
+        to guarantee that the values of the Wishart processe are always positive
+        semidefinite matrices.
         """
-        eigval, eigvec = np.linalg.eigh(matrix)
+        eigval, right_eigvec = np.linalg.eigh(matrix)
         eigval = np.maximum(eigval, 0)
         if np.any(eigval == 0):
-            matrix = eigvec @ np.diag(eigval) @ eigvec.T
-        return matrix, eigval, eigvec
+            matrix = right_eigvec @ np.diag(eigval) @ right_eigvec.T
+        return matrix, eigval, right_eigvec
