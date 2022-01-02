@@ -149,7 +149,7 @@ class GeometricBrownianMotion(BrownianMotion):
         """Generate sample paths of the geometric Brownian motion."""
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
-        validate_number(x0, "x0")
+        validate_positive_number(x0, "x0")
 
         bm_paths = super().sample(
             T=T, n_time_grid=n_time_grid, x0=0, n_paths=n_paths
@@ -611,7 +611,7 @@ class CoxIngersollRossProcess(StochasticProcess):
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
         validate_positive_number(x0, "x0")
         if not isinstance(algorithm, str):
-            raise ValueError("'algorithm' must be of type str.")
+            raise TypeError("'algorithm' must be of type str.")
 
         if algorithm == "alfonsi":
             paths = self._alfonsi(T, n_time_grid, x0, n_paths)
@@ -750,7 +750,7 @@ class SquaredBesselProcess(StochasticProcess):
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
         validate_nonnegative_number(x0, "x0")
         if not isinstance(algorithm, (str, type(None))):
-            raise ValueError("'algorithm' must be of type str.")
+            raise TypeError("'algorithm' must be of type str.")
 
         if algorithm is None:
             if self.n >= 2:
@@ -766,6 +766,14 @@ class SquaredBesselProcess(StochasticProcess):
                 raise ValueError("'alfonsi' not applicable for n < 2.")
             paths = self._alfonsi(T, n_time_grid, x0, n_paths)
         elif algorithm == "radial":
+            if not isinstance(self.n, int):
+                raise ValueError(
+                    "'radial' algorithm can only be used for integer 'n'."
+                )
+            if not self.n >= 2:
+                raise ValueError(
+                    "'radial' algorithm can only be used for n >= 2."
+                )
             paths = self._radial(T, n_time_grid, x0, n_paths)
         else:
             raise ValueError(f"Unknown algorithm: {algorithm}")
@@ -810,15 +818,11 @@ class SquaredBesselProcess(StochasticProcess):
         Exact sampling based on the representation of a squared Bessel process
         as the squared L2 norm of standard n-dimensional Brownian motion.
         """
-        if not isinstance(self.n, int):
-            raise ValueError(
-                "'radial' algorithm can only be used for integer 'n'."
-            )
         bm = MultidimensionalBrownianMotion(
             mu=np.zeros(self.n), sigma=np.eye(self.n)
         )
         bm_x0 = np.zeros(self.n)
-        bm_x0[0] = x0
+        bm_x0[0] = np.sqrt(x0)
         paths = bm.sample(T, n_time_grid, bm_x0, n_paths)
         paths = np.linalg.norm(paths, ord=2, axis=-1) ** 2
 
