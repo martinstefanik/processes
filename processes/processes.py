@@ -44,7 +44,34 @@ class StochasticProcess(ABC):
         return np.linspace(0, T, num=n_time_grid)
 
 
-class BrownianMotion(StochasticProcess):
+class BaseLevyProcess(StochasticProcess):
+    """
+    Base class for Levy processes that can all be sampled in the same way using
+    the given the distribution of their increments.
+    """
+
+    @staticmethod
+    def _sample_from_increment_dist(
+        increments_sampler: Callable[[Union[list, tuple]], np.ndarray],
+        n_time_grid: int,
+        x0: float,
+        n_paths: int,
+    ):
+        """
+        Generate sample paths of a Levy process from the distribution of its
+        increments.
+        """
+        increments = increments_sampler(size=(n_paths, n_time_grid - 1))
+        paths = np.cumsum(increments, axis=1)
+        paths = np.insert(paths, 0, 0, axis=1)
+        paths = np.squeeze(paths)
+        if x0 != 0:
+            paths += x0
+
+        return paths
+
+
+class BrownianMotion(BaseLevyProcess):
     """Brownian motion."""
 
     def __init__(self, mu: float = 0, sigma: float = 1) -> None:
@@ -78,16 +105,12 @@ class BrownianMotion(StochasticProcess):
         validate_number(x0, "x0")
 
         dt = T / n_time_grid
-        increments = np.random.normal(
-            loc=self.mu * dt,
-            scale=self.sigma * np.sqrt(dt),
-            size=(n_paths, n_time_grid - 1),
+        sampler = lambda size: np.random.normal(
+            loc=self.mu * dt, scale=self.sigma * np.sqrt(dt), size=size
         )
-        paths = np.cumsum(increments, axis=1)
-        paths = np.insert(paths, 0, 0, axis=1)
-        paths = np.squeeze(paths)
-        if x0 != 0:
-            paths += x0
+        paths = self._sample_from_increment_dist(
+            sampler, n_time_grid, x0, n_paths
+        )
 
         return paths
 
@@ -450,7 +473,7 @@ class MultidimensionalItoProcess(ItoProcess):
         return paths
 
 
-class PoissonProcess(StochasticProcess):
+class PoissonProcess(BaseLevyProcess):
     """Poisson process."""
 
     def __init__(self, intensity: float) -> None:
@@ -474,14 +497,10 @@ class PoissonProcess(StochasticProcess):
         validate_number(x0, "x0")
 
         dt = T / n_time_grid
-        increments = np.random.poisson(
-            lam=self.intensity * dt, size=(n_paths, n_time_grid - 1)
+        sampler = lambda size: np.random.poisson(self.intensity * dt, size=size)
+        paths = self._sample_from_increment_dist(
+            sampler, n_time_grid, x0, n_paths
         )
-        paths = np.cumsum(increments, axis=1)
-        paths = np.insert(paths, 0, 0, axis=1)
-        paths = np.squeeze(paths)
-        if x0 != 0:
-            paths += x0
 
         return paths
 
@@ -923,7 +942,7 @@ class FractionalBrownianMotion(StochasticProcess):
         return rho
 
 
-class GammaProcess(StochasticProcess):
+class GammaProcess(BaseLevyProcess):
     """Gamma process."""
 
     def __init__(self, shape: float, scale: float) -> None:
@@ -957,16 +976,12 @@ class GammaProcess(StochasticProcess):
         validate_number(x0, "x0")
 
         dt = T / n_time_grid
-        increments = np.random.gamma(
-            shape=self.shape * dt,
-            scale=self.scale,
-            size=(n_paths, n_time_grid - 1),
+        sampler = lambda size: np.random.gamma(
+            shape=self.shape * dt, scale=self.scale, size=size
         )
-        paths = np.cumsum(increments, axis=1)
-        paths = np.insert(paths, 0, 0, axis=1)
-        paths = np.squeeze(paths)
-        if x0 != 0:
-            paths += x0
+        paths = self._sample_from_increment_dist(
+            sampler, n_time_grid, x0, n_paths
+        )
 
         return paths
 
@@ -1141,7 +1156,7 @@ class WishartProcess(StochasticProcess):
         return matrix, eigval, right_eigvec
 
 
-class NormalInverseGaussianProcess(StochasticProcess):
+class NormalInverseGaussianProcess(BaseLevyProcess):
     """Normal inverse Gaussian process."""
 
     def __init__(
@@ -1199,7 +1214,7 @@ class NormalInverseGaussianProcess(StochasticProcess):
             raise ValueError("alpha > |beta| is required.")
 
     def sample(
-        self, T: float, n_time_grid: int, x0: np.ndarray, n_paths: int = 1
+        self, T: float, n_time_grid: int, x0: float, n_paths: int = 1
     ) -> np.ndarray:
         """Generate sample paths of the Normal inverse Gaussian process."""
         # Sanity check for input parameters
@@ -1209,18 +1224,15 @@ class NormalInverseGaussianProcess(StochasticProcess):
         dt = T / n_time_grid
         delta_dt = self.delta * dt
         mu_dt = self.mu * dt
-        random_variable = norminvgauss(
+        inc_dist = norminvgauss(
             a=self.alpha * delta_dt,
             b=self.beta * delta_dt,
             loc=mu_dt,
             scale=delta_dt,
         )
-
-        increments = random_variable.rvs(size=(n_paths, n_time_grid - 1))
-        paths = np.cumsum(increments, axis=1)
-        paths = np.insert(paths, 0, 0, axis=1)
-        paths = np.squeeze(paths)
-        if x0 != 0:
-            paths += x0
+        sampler = lambda size: inc_dist.rvs(size=size)
+        paths = self._sample_from_increment_dist(
+            sampler, n_time_grid, x0, n_paths
+        )
 
         return paths
