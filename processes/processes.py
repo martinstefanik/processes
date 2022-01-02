@@ -6,6 +6,7 @@ from typing import Callable, Literal, Optional, Union
 
 import numpy as np
 from numpy.core.umath_tests import matrix_multiply
+from scipy.stats import norminvgauss
 
 from processes.distributions import Distribution
 from processes.utils import (
@@ -1138,3 +1139,88 @@ class WishartProcess(StochasticProcess):
         if np.any(eigval == 0):
             matrix = right_eigvec @ np.diag(eigval) @ right_eigvec.T
         return matrix, eigval, right_eigvec
+
+
+class NormalInverseGaussianProcess(StochasticProcess):
+    """Normal inverse Gaussian process."""
+
+    def __init__(
+        self, alpha: float, beta: float, delta: float, mu: float
+    ) -> None:
+        self.alpha = alpha
+        self.beta = beta
+        self.delta = delta
+        self.mu = mu
+
+    @property
+    def alpha(self) -> float:  # noqa: D102
+        return self._alpha
+
+    @alpha.setter
+    def alpha(self, value: float) -> None:
+        validate_positive_number(value, "alpha")
+        if hasattr(self, "_beta"):
+            self._check_parameter_compatibility(value, self._beta)
+        self._alpha = value
+
+    @property
+    def beta(self) -> float:  # noqa: D102
+        return self._beta
+
+    @beta.setter
+    def beta(self, value: float) -> None:
+        validate_number(value, "beta")
+        if hasattr(self, "_alpha"):
+            self._check_parameter_compatibility(self._alpha, value)
+        self._beta = value
+
+    @property
+    def delta(self) -> float:  # noqa: D102
+        return self._delta
+
+    @delta.setter
+    def delta(self, value: float) -> None:
+        validate_positive_number(value, "delta")
+        self._delta = value
+
+    @property
+    def mu(self) -> float:  # noqa: D102
+        return self._mu
+
+    @mu.setter
+    def mu(self, value: float) -> None:
+        validate_number(value, "mu")
+        self._mu = value
+
+    @staticmethod
+    def _check_parameter_compatibility(alpha: float, beta: float) -> None:
+        """Check if the parameters Q and K are compatible."""
+        if not alpha > np.abs(beta):
+            raise ValueError("alpha > |beta| is required.")
+
+    def sample(
+        self, T: float, n_time_grid: int, x0: np.ndarray, n_paths: int = 1
+    ) -> np.ndarray:
+        """Generate sample paths of the Normal inverse Gaussian process."""
+        # Sanity check for input parameters
+        validate_common_sampling_parameters(T, n_time_grid, n_paths)
+        validate_number(x0, "x0")
+
+        dt = T / n_time_grid
+        delta_dt = self.delta * dt
+        mu_dt = self.mu * dt
+        random_variable = norminvgauss(
+            a=self.alpha * delta_dt,
+            b=self.beta * delta_dt,
+            loc=mu_dt,
+            scale=delta_dt,
+        )
+
+        increments = random_variable.rvs(size=(n_paths, n_time_grid - 1))
+        paths = np.cumsum(increments, axis=1)
+        paths = np.insert(paths, 0, 0, axis=1)
+        paths = np.squeeze(paths)
+        if x0 != 0:
+            paths += x0
+
+        return paths

@@ -99,6 +99,11 @@ processes = (
         },
         "x0": np.eye(2),
     },
+    {
+        "class": NormalInverseGaussianProcess,
+        "parameters": {"alpha": 0.5, "beta": 0.2, "delta": 0.3, "mu": 0},
+        "x0": 0.01,
+    },
 )
 
 
