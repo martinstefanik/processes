@@ -1,8 +1,8 @@
 """Global fixtures."""
 
 import pytest
+from scipy.stats import norm
 
-from processes.distributions import NormalDistribution
 from processes.processes import *
 
 processes = (
@@ -77,7 +77,10 @@ processes = (
     },
     {
         "class": CompoundPoissonProcess,
-        "parameters": {"intensity": 7, "jump_dist": NormalDistribution()},
+        "parameters": {
+            "intensity": 7,
+            "jump_sampler": lambda size: norm().rvs(size=size),
+        },
         "x0": 0.4,
     },
     {

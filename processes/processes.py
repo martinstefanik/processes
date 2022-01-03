@@ -8,7 +8,6 @@ import numpy as np
 from numpy.core.umath_tests import matrix_multiply
 from scipy.stats import norminvgauss
 
-from processes.distributions import Distribution
 from processes.utils import (
     get_time_increments,
     validate_1d_array,
@@ -52,7 +51,7 @@ class BaseLevyProcess(StochasticProcess):
 
     @staticmethod
     def _sample_from_increment_dist(
-        increments_sampler: Callable[[Union[list, tuple]], np.ndarray],
+        increments_sampler: Callable[[Union[tuple, list, float]], np.ndarray],
         n_time_grid: int,
         x0: float,
         n_paths: int,
@@ -61,7 +60,7 @@ class BaseLevyProcess(StochasticProcess):
         Generate sample paths of a Levy process from the distribution of its
         increments.
         """
-        increments = increments_sampler(size=(n_paths, n_time_grid - 1))
+        increments = increments_sampler((n_paths, n_time_grid - 1))
         paths = np.cumsum(increments, axis=1)
         paths = np.insert(paths, 0, 0, axis=1)
         paths = np.squeeze(paths)
@@ -430,7 +429,11 @@ class MultidimensionalItoProcess(ItoProcess):
         self._dim = value
 
     def sample(
-        self, T: float, n_time_grid: int, x0: float, n_paths: int = 1
+        self,
+        T: float,
+        n_time_grid: int,
+        x0: Union[np.ndarray, float],
+        n_paths: int = 1,
     ) -> np.ndarray:
         """Generate sample paths of the multi-dimensional Ito process."""
         # Sanity check for input parameters
@@ -508,19 +511,27 @@ class PoissonProcess(BaseLevyProcess):
 class CompoundPoissonProcess(PoissonProcess):
     """Compound Poisson process."""
 
-    def __init__(self, intensity: float, jump_dist: type[Distribution]) -> None:
+    def __init__(
+        self,
+        intensity: float,
+        jump_sampler: Callable[[Union[list, tuple, float]], np.ndarray],
+    ) -> None:
         self.intensity = intensity
-        self.jump_dist = jump_dist
+        self.jump_sampler = jump_sampler
 
     @property
-    def jump_dist(self) -> type[Distribution]:  # noqa: D102
-        return self._jump_dist
+    def jump_sampler(
+        self,
+    ) -> Callable[[Union[list, tuple, float]], np.ndarray]:  # noqa: D102
+        return self._jump_sampler
 
-    @jump_dist.setter
-    def jump_dist(self, value: type[Distribution]) -> None:
-        if not isinstance(value, Distribution):
-            raise ValueError("'increment_dist' must be of type Distribution.")
-        self._jump_dist = value
+    @jump_sampler.setter
+    def jump_sampler(
+        self, value: Callable[[Union[list, tuple, float]], np.ndarray]
+    ) -> None:
+        if not callable(value):
+            raise ValueError("'jump_sampler' must be callable.")
+        self._jump_sampler = value
 
     def sample(
         self, T: float, n_time_grid: int, x0: float = 0, n_paths: int = 1
@@ -535,7 +546,7 @@ class CompoundPoissonProcess(PoissonProcess):
         paths = []
         for i in range(n_paths):
             terminal = pp_paths[i, -1]
-            jumps = self.jump_dist.sample(size=terminal)
+            jumps = self.jump_sampler.sample(size=terminal)
             path = np.cumsum(jumps)
             path = np.insert(path, 0, 0)[pp_paths[i]]
             paths.append(path)
@@ -753,7 +764,7 @@ class SquaredBesselProcess(StochasticProcess):
             raise TypeError("'algorithm' must be of type str.")
 
         if algorithm is None:
-            if self.n >= 2:
+            if self.n >= 2:  # alfonsi seems better when possible
                 paths = self._alfonsi(T, n_time_grid, x0, n_paths)
             else:
                 paths = self._milstein_sym(T, n_time_grid, x0, n_paths)
@@ -762,18 +773,8 @@ class SquaredBesselProcess(StochasticProcess):
         elif algorithm == "milstein-sym":
             paths = self._milstein_sym(T, n_time_grid, x0, n_paths)
         elif algorithm == "alfonsi":
-            if self.n < 2:
-                raise ValueError("'alfonsi' not applicable for n < 2.")
             paths = self._alfonsi(T, n_time_grid, x0, n_paths)
         elif algorithm == "radial":
-            if not isinstance(self.n, int):
-                raise ValueError(
-                    "'radial' algorithm can only be used for integer 'n'."
-                )
-            if not self.n >= 2:
-                raise ValueError(
-                    "'radial' algorithm can only be used for n >= 2."
-                )
             paths = self._radial(T, n_time_grid, x0, n_paths)
         else:
             raise ValueError(f"Unknown algorithm: {algorithm}")
@@ -798,6 +799,8 @@ class SquaredBesselProcess(StochasticProcess):
         Alfonsi scheme for the squared Bessel process. See On the discretization
         schemes for the CIR (and Bessel squared) processes (2005).
         """
+        if self.n < 2:
+            raise ValueError("'alfonsi' not applicable for n < 2.")
         dt = T / n_time_grid
         dW_scale = np.sqrt(dt)
         rho = (self.n - 2) * dt
@@ -818,10 +821,13 @@ class SquaredBesselProcess(StochasticProcess):
         Exact sampling based on the representation of a squared Bessel process
         as the squared L2 norm of standard n-dimensional Brownian motion.
         """
-        bm = MultidimensionalBrownianMotion(
-            mu=np.zeros(self.n), sigma=np.eye(self.n)
-        )
-        bm_x0 = np.zeros(self.n)
+        if not self.n == int(self.n) or not self.n >= 2:
+            raise ValueError(
+                "'radial' algorithm can only be used for integer 'n'."
+            )
+        n = int(self.n)  # this is to also work for n = 3.0 for instance
+        bm = MultidimensionalBrownianMotion(mu=np.zeros(n), sigma=np.eye(n))
+        bm_x0 = np.zeros(n)
         bm_x0[0] = np.sqrt(x0)
         paths = bm.sample(T, n_time_grid, bm_x0, n_paths)
         paths = np.linalg.norm(paths, ord=2, axis=-1) ** 2
