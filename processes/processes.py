@@ -1,6 +1,7 @@
 """Classes for stochastic processes."""
 
 from abc import ABC, abstractmethod
+from functools import lru_cache
 from math import ceil
 from typing import Callable, Literal, Optional, Union
 
@@ -549,8 +550,8 @@ class CompoundPoissonProcess(PoissonProcess):
             pp_paths = np.expand_dims(pp_paths, axis=0)
         paths = []
         for i in range(n_paths):
-            terminal = pp_paths[i, -1]
-            jumps = self.jump_sampler(terminal)
+            n_jumps = pp_paths[i, -1]
+            jumps = self.jump_sampler(n_jumps)
             path = np.cumsum(jumps)
             path = np.insert(path, 0, 0)[pp_paths[i]]
             paths.append(path)
@@ -910,7 +911,7 @@ class FractionalBrownianMotion(StochasticProcess):
     @hurst.setter
     def hurst(self, value: float) -> None:
         validate_number(value, "hurst")
-        if not value > 0 and not value < 1:
+        if not value > 0 or not value < 1:
             raise ValueError("'hurst' must be in (0, 1).")
         self._hurst = value
 
@@ -923,22 +924,39 @@ class FractionalBrownianMotion(StochasticProcess):
         validate_number(x0, "x0")
 
         dt = T / n_time_grid
-        size = 2 ** ceil(np.log2(n_time_grid - 2)) + 1
+        size = 2 ** ceil(np.log2(n_time_grid - 3)) + 1
+        sqrt_eigenvalues = self._sqrt_eigenvalues(size)
+        scale = (dt ** self.hurst) * 2 ** (1 / 2) * (size - 1)
+        paths = []
+        for i in range(n_paths):
+            z = np.random.normal(scale=scale, size=2 * size).view(complex)
+            z[0] = z[0].real * 2 ** (1 / 2)
+            z[-1] = z[-1].real * 2 ** (1 / 2)
+            fBm_increments = np.fft.irfft(sqrt_eigenvalues * z)[
+                : (n_time_grid - 1)
+            ]
+            path = np.cumsum(fBm_increments)
+            paths.append(path)
+        paths = np.vstack(paths)
+        paths = np.insert(paths, 0, 0, axis=1)
+        if x0 != 0:
+            paths = paths + x0
+        paths = np.squeeze(paths)
+
+        return paths
+
+    @lru_cache(maxsize=1)
+    def _sqrt_eigenvalues(self, size: int) -> np.ndarray:
+        """
+        Compute the square root of the eigenvalues of circulant matrix in which
+        the covariance matrix of the increments of the fBm is embedded.
+        """
         sqrt_eigenvalues = np.sqrt(
             np.fft.irfft(self._acf_fractional_gaussian_noise(self.hurst, size))[
                 :size
             ]
         )
-        scale = dt ** (2 * self.hurst) * 2 ** (1 / 2) * (size - 1)
-
-        z = np.random.normal(scale=scale, size=2 * size).view(complex)
-        z[0] = z[0].real * 2 ** (1 / 2)
-        z[-1] = z[-1].real * 2 ** (1 / 2)
-        fBm_increments = np.fft.irfft(sqrt_eigenvalues * z)[:n_time_grid]
-        paths = np.cumsum(fBm_increments)
-        paths = np.squeeze(paths)
-
-        return paths
+        return sqrt_eigenvalues
 
     @staticmethod
     def _acf_fractional_gaussian_noise(hurst: float, n: float) -> np.ndarray:
