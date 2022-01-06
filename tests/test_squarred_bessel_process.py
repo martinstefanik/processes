@@ -85,12 +85,12 @@ def test_invalid_algorithm(process, algorithm, n_time_grid):
 @pytest.mark.parametrize(
     "algorithm, n", [("radial", 1), ("radial", 2.5), ("alfonsi", 1.7)]
 )
-def test_invalid_radial(algorithm, n):
+def test_invalid_radial(algorithm, n, n_time_grid):
     process = SquaredBesselProcess(n=n)
     with pytest.raises(ValueError):
         process.sample(
             T=1,
-            n_time_grid=1,
+            n_time_grid=n_time_grid,
             x0=0.02,
             n_paths=1,
             algorithm=algorithm,

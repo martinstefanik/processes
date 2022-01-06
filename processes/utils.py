@@ -3,7 +3,6 @@
 """Utilities."""
 
 from inspect import signature
-from numbers import Real
 from typing import Any
 
 import numpy as np
@@ -11,7 +10,7 @@ import numpy as np
 
 def validate_number(value: Any, name: str) -> None:
     """Check that a given object is a real number."""
-    if not isinstance(value, Real):
+    if not isinstance(value, (float, int)):
         raise TypeError(f"'{name}' must be a number.")
 
 
@@ -47,6 +46,8 @@ def validate_matrix(value: Any, name: str) -> None:
     """Check that a given matrix is a numpy array."""
     if not isinstance(value, np.ndarray):
         raise TypeError(f"'{name}' must be a numpy array.")
+    if len(value.shape) != 2:
+        raise ValueError(f"'{name}' must be two-dimensional.")
 
 
 def validate_square_matrix(value: Any, name: str) -> None:
@@ -77,6 +78,8 @@ def validate_common_sampling_parameters(
     """Validate parameters for sampling paths of a stochastic process."""
     validate_positive_number(T, "T")
     validate_positive_integer(n_time_grid, "n_time_grid")
+    if not n_time_grid >= 2:
+        raise ValueError("'n_time_grid' must be >= 2.")
     validate_positive_integer(n_paths, "n_paths")
 
 
@@ -84,7 +87,7 @@ def validate_1d_array(array: Any, name: str) -> None:
     """Check that a given object is a one-dimensional numpy array."""
     if not isinstance(array, np.ndarray):
         raise TypeError(f"'{name}' must be a numpy array.")
-    if not np.squeeze(array).shape != (array.shape,):
+    if np.squeeze(array).shape != (array.shape[0],):
         raise ValueError(f"'{name}' must be one-dimensional.")
 
 

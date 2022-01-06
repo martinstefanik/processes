@@ -175,6 +175,7 @@ class MultidimensionalBrownianMotion(StochasticProcess):
 
     @mu.setter
     def mu(self, value: np.ndarray) -> None:
+        validate_1d_array(value, "mu")
         if hasattr(self, "_sigma"):
             self._check_parameter_compatibility(value, self._sigma)
         self._mu = value
@@ -212,7 +213,7 @@ class MultidimensionalBrownianMotion(StochasticProcess):
         """Generate sample paths of the multi-dimensional Brownian motion."""
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
-        if isinstance(x0, float):
+        if isinstance(x0, (float, int)):
             x0 = np.array([x0] * self.dim)
         else:
             validate_1d_array(x0, "x0")
@@ -237,15 +238,15 @@ class MultidimensionalBrownianMotion(StochasticProcess):
 class TimeChangedBrownianMotion(StochasticProcess):
     """Time-changed Brownian motion."""
 
-    def __init__(self, time_change: Callable) -> None:
+    def __init__(self, time_change: Callable[[np.ndarray], np.ndarray]) -> None:
         self.time_change = time_change
 
     @property
-    def time_change(self) -> Callable:  # noqa: D102
+    def time_change(self) -> Callable[[np.ndarray], np.ndarray]:  # noqa: D102
         return self._time_change
 
     @time_change.setter
-    def time_change(self, value: Callable) -> None:
+    def time_change(self, value: Callable[[np.ndarray], np.ndarray]) -> None:
         validate_callable_args(value, 1, "time_change")
         self._time_change = value
 
@@ -345,12 +346,9 @@ class VasicekProcess(OrnsteinUhlenbeckProcess):
 class ItoProcess(StochasticProcess):
     """Ito process."""
 
-    def __init__(
-        self, mu: Callable, sigma: Callable, positive: bool = False
-    ) -> None:
+    def __init__(self, mu: Callable, sigma: Callable) -> None:
         self.mu = mu
         self.sigma = sigma
-        self.positive = positive
 
     @property
     def mu(self) -> Callable:  # noqa: D102
@@ -370,21 +368,10 @@ class ItoProcess(StochasticProcess):
         validate_callable_args(value, 2, "sigma")
         self._sigma = value
 
-    @property
-    def positive(self) -> bool:  # noqa: D102
-        return self._positive
-
-    @positive.setter
-    def positive(self, value: bool) -> None:
-        if not isinstance(value, bool):
-            raise TypeError("'positive' must be a boolean.")
-        self._positive = value
-
     def sample(
         self, T: float, n_time_grid: int, x0: float, n_paths: int = 1
     ) -> np.ndarray:
         """Generate sample paths of the Ito process."""
-        # TODO: Add a generic scheme to ensure positivity if positive=True.
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
         validate_number(x0, "x0")
@@ -418,6 +405,24 @@ class MultidimensionalItoProcess(ItoProcess):
         self.dim = dim
 
     @property
+    def mu(self) -> Callable:  # noqa: D102
+        return self._mu
+
+    @mu.setter
+    def mu(self, value: Callable) -> None:
+        validate_callable_args(value, 2, "mu")
+        self._mu = value
+
+    @property
+    def sigma(self) -> Callable:  # noqa: D102
+        return self._sigma
+
+    @sigma.setter
+    def sigma(self, value: Callable) -> None:
+        validate_callable_args(value, 2, "sigma")
+        self._sigma = value
+
+    @property
     def dim(self) -> int:  # noqa: D102
         return self._dim
 
@@ -438,7 +443,7 @@ class MultidimensionalItoProcess(ItoProcess):
         """Generate sample paths of the multi-dimensional Ito process."""
         # Sanity check for input parameters
         validate_common_sampling_parameters(T, n_time_grid, n_paths)
-        if isinstance(x0, float):
+        if isinstance(x0, (float, int)):
             x0 = np.array([x0] * self.dim)
         else:
             validate_1d_array(x0, "x0")
@@ -492,7 +497,7 @@ class PoissonProcess(BaseLevyProcess):
         self._intensity = value
 
     def sample(
-        self, T: float, n_time_grid: int, x0: int = 0, n_paths: int = 1
+        self, T: float, n_time_grid: int, x0: float = 0, n_paths: int = 1
     ) -> np.ndarray:
         """Generate sample paths of the Poisson process."""
         # Sanity check for input parameters
@@ -529,8 +534,7 @@ class CompoundPoissonProcess(PoissonProcess):
     def jump_sampler(
         self, value: Callable[[Union[list, tuple, float]], np.ndarray]
     ) -> None:
-        if not callable(value):
-            raise ValueError("'jump_sampler' must be callable.")
+        validate_callable_args(value, n_args=1, name="jump_sampler")
         self._jump_sampler = value
 
     def sample(
@@ -546,7 +550,7 @@ class CompoundPoissonProcess(PoissonProcess):
         paths = []
         for i in range(n_paths):
             terminal = pp_paths[i, -1]
-            jumps = self.jump_sampler.sample(size=terminal)
+            jumps = self.jump_sampler(terminal)
             path = np.cumsum(jumps)
             path = np.insert(path, 0, 0)[pp_paths[i]]
             paths.append(path)
@@ -715,18 +719,11 @@ class CoxIngersollRossProcess(StochasticProcess):
 
         paths = np.zeros(shape=(n_paths, n_time_grid))
         paths[:, 0] = x0
-        if d > 1:
-            for i in range(1, n_time_grid):
-                lam = paths[:, i - 1] * np.exp(-self.theta * dt) / c
-                Z = np.random.normal(size=n_paths)
-                X = np.random.chisquare(df=d - 1, size=n_paths)
-                paths[:, i] = c * ((Z + np.sqrt(lam)) ** 2 + X)
-        else:
-            for i in range(1, n_time_grid):
-                lam = paths[:, i - 1] * np.exp(-self.theta * dt) / c
-                N = np.random.poisson(lam / 2, size=n_paths)
-                X = np.random.chisquare(df=d + 2 * N, size=n_paths)
-                paths[:, i] = c * X
+        for i in range(1, n_time_grid):
+            lam = paths[:, i - 1] * np.exp(-self.theta * dt) / c
+            Z = np.random.normal(size=n_paths)
+            X = np.random.chisquare(df=d - 1, size=n_paths)
+            paths[:, i] = c * ((Z + np.sqrt(lam)) ** 2 + X)
 
         return np.squeeze(paths)
 
@@ -763,7 +760,7 @@ class SquaredBesselProcess(StochasticProcess):
         if not isinstance(algorithm, (str, type(None))):
             raise TypeError("'algorithm' must be of type str.")
 
-        if algorithm is None:
+        if algorithm is None:  # pragma: no cover
             if self.n >= 2:  # alfonsi seems better when possible
                 paths = self._alfonsi(T, n_time_grid, x0, n_paths)
             else:
@@ -1224,7 +1221,7 @@ class NormalInverseGaussianProcess(BaseLevyProcess):
             raise ValueError("alpha > |beta| is required.")
 
     def sample(
-        self, T: float, n_time_grid: int, x0: float, n_paths: int = 1
+        self, T: float, n_time_grid: int, x0: float = 0, n_paths: int = 1
     ) -> np.ndarray:
         """Generate sample paths of the Normal inverse Gaussian process."""
         # Sanity check for input parameters

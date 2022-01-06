@@ -1,56 +1,35 @@
-"""Tests for the CoxIngersollRossProcess class."""
+"""Tests for the BesselProcess class."""
 
 
 import numpy as np
 import pytest
 
-from processes.processes import CoxIngersollRossProcess
+from processes.processes import BesselProcess
 
 
 @pytest.fixture(scope="module")
 def process():
-    return CoxIngersollRossProcess(theta=1.2, mu=0.01, sigma=0.04)
+    return BesselProcess(n=3.0)
 
 
-@pytest.mark.parametrize(
-    "theta, mu, sigma",
-    [
-        (-1.2, 0.01, 0.04),
-        (1.2, -0.01, 0.04),
-        (1.2, 0.01, -0.04),
-        (0.1, 0.01, 0.7),  # Feller condition does not hold here
-        ({}, 0.01, 0.04),
-        (1.2, [], 0.04),
-        (1.2, 0.01, []),
-    ],
-)
-def test_init_errors(theta, mu, sigma):
-    if all(map(lambda p: isinstance(p, (int, float)), [theta, mu, sigma])):
+@pytest.mark.parametrize("n", [-1, "a"])
+def test_init_errors(n):
+    if isinstance(n, (int, float)):
         with pytest.raises(ValueError):
-            CoxIngersollRossProcess(theta=theta, mu=mu, sigma=sigma)
+            BesselProcess(n=n)
     else:
         with pytest.raises(TypeError):
-            CoxIngersollRossProcess(theta=theta, mu=mu, sigma=sigma)
+            BesselProcess(n=n)
 
 
 def test_post_init_modification(process):
     with pytest.raises(ValueError):
-        process.theta = -0.4
-    with pytest.raises(ValueError):  # violate the Feller condition
-        process.theta = 0.00001
-    with pytest.raises(ValueError):
-        process.mu = -0.1
-    with pytest.raises(ValueError):  # violate the Feller condition
-        process.mu = 0.0000001
-    with pytest.raises(ValueError):
-        process.sigma = -0.1
-    with pytest.raises(ValueError):  # violate the Feller condition
-        process.sigma = 10
+        process.n = -0.4
 
 
 @pytest.mark.parametrize(
     "algorithm",
-    ["conditional", "alfonsi", "euler-maruyama", "milstein-sym"],
+    [None, "radial", "alfonsi", "euler-maruyama", "milstein-sym"],
 )
 def test_sample(process, algorithm, T, n_time_grid, n_paths):
     x0 = 0.02
@@ -100,3 +79,18 @@ def test_invalid_algorithm(process, algorithm, n_time_grid):
                 n_paths=1,
                 algorithm=algorithm,
             )
+
+
+@pytest.mark.parametrize(
+    "algorithm, n", [("radial", 1), ("radial", 2.5), ("alfonsi", 1.7)]
+)
+def test_invalid_radial(algorithm, n, n_time_grid):
+    process = BesselProcess(n=n)
+    with pytest.raises(ValueError):
+        process.sample(
+            T=1,
+            n_time_grid=1,
+            x0=0.02,
+            n_paths=n_time_grid,
+            algorithm=algorithm,
+        )
