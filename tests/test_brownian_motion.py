@@ -37,3 +37,17 @@ def test_sample(process, T, n_time_grid, n_paths):
     else:
         assert paths.shape == (n_paths, n_time_grid)
         assert np.all(paths[:, 0] == x0)
+
+
+def test_sample_at(process, n_paths):
+    x0 = 2.5
+    times = np.array([0, 2, 32, 33.3, 42])
+    n_time_grid = len(times)
+    paths = process._sample_at(times=times, x0=x0, n_paths=n_paths)
+    assert isinstance(paths, np.ndarray)
+    if n_paths == 1:
+        assert paths.shape == (n_time_grid,)
+        assert paths[0] == x0
+    else:
+        assert paths.shape == (n_paths, n_time_grid)
+        assert np.all(paths[:, 0] == x0)

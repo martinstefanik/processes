@@ -131,10 +131,10 @@ class BrownianMotion(BaseLevyProcess):
             size=(n_paths, len(dt)),
         )
         paths = np.cumsum(increments, axis=1)
+        if times[0] == 0:
+            paths = np.insert(paths, 0, 0, axis=1)
         if x0 != 0:
             paths += x0
-        else:
-            paths = np.insert(paths, 0, 0, axis=1)
         paths = np.squeeze(paths)
 
         return paths
