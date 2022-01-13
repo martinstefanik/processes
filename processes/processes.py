@@ -6,7 +6,6 @@ from math import ceil
 from typing import Callable, Literal, Optional, Union
 
 import numpy as np
-from numpy.core.umath_tests import matrix_multiply
 from scipy.stats import norminvgauss
 
 from processes.utils import (
@@ -453,18 +452,19 @@ class MultidimensionalItoProcess(ItoProcess):
 
         # Run the Euler-Maruyama scheme
         dt = T / n_time_grid
+        dW_cov = dt * np.eye(self.dim)
+        times = np.linspace(0, T, n_time_grid)
         paths = np.zeros(shape=(n_paths, n_time_grid, self.dim))
         paths[:, 0] = x0
-        dW_cov = dt * np.eye(self.dim)
 
         # TODO: Check whether this cannot be improved both in terms of speed as
         #       well as in terms of readability.
         for i in range(1, n_time_grid):
-            t = (i - 1) * dt
+            t = times[i - 1]
             drift_coeffs = np.apply_along_axis(
                 lambda x: self.mu(x, t), axis=1, arr=paths[:, i - 1]
             )  # t is the same for all paths in the current iteration
-            diffusion_coeffs = np.apply_along_axis(
+            diff_coeffs = np.apply_along_axis(
                 lambda x: self.sigma(x, t), axis=1, arr=paths[:, i - 1]
             )  # t is the same for all paths in the current iteration
             dW = np.random.multivariate_normal(
@@ -473,9 +473,7 @@ class MultidimensionalItoProcess(ItoProcess):
             paths[:, i] = (
                 paths[:, i - 1]
                 + drift_coeffs * dt
-                + matrix_multiply(
-                    diffusion_coeffs, np.expand_dims(dW, 2)
-                ).squeeze()
+                + np.stack([diff_coeffs[i] @ dW[i] for i in range(n_paths)])
             )
         paths = np.squeeze(paths)
 
@@ -876,7 +874,10 @@ class BesselProcess(SquaredBesselProcess):
         """Generate sample paths of the Bessel process."""
         validate_nonnegative_number(x0, "x0")
         paths = super().sample(T, n_time_grid, x0 ** 2, n_paths, algorithm)
-        return np.sqrt(paths)
+        if algorithm == "euler-maruyama":
+            return np.sqrt(np.abs(paths))
+        else:
+            return np.sqrt(paths)
 
 
 class InverseBesselProcess(BesselProcess):
@@ -895,7 +896,10 @@ class InverseBesselProcess(BesselProcess):
         """Generate sample paths of the inverse Bessel process."""
         validate_positive_number(x0, "x0")
         paths = super().sample(T, n_time_grid, 1 / x0, n_paths, algorithm)
-        return 1 / paths
+        if algorithm == "euler-maruyama":
+            return 1 / np.abs(paths)
+        else:
+            return 1 / paths
 
 
 class FractionalBrownianMotion(StochasticProcess):
